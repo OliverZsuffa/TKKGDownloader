@@ -16,7 +16,7 @@ The initial album text search failed for episode 150. Testing showed that spotDL
 
 Request 002 replaces album text search with a generic first-track lookup. spotDL's metadata-only `save` operation resolves the first track, whose metadata supplies the Spotify album ID. The downloader then validates the album metadata and downloads by direct album URL.
 
-The new flow validates that the first track belongs to TKKG and matches the requested episode and `Teil 01`. It validates the album ID, album identity, Spotify track count, and downloaded MP3 count. It does not use `list_length` as the album track count.
+The new flow validates that the first track belongs to TKKG and matches the requested episode and `Teil 01`. It validates the album ID and album identity. Request 003 subsequently changed completeness validation to derive the expected count from the number of song records returned by spotDL, requiring a complete sequence of track numbers. It does not rely on Spotify's inconsistent `tracks_count` field.
 
 ## Verification status
 
