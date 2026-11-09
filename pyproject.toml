@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Oliver Zsuffa" }]
+dependencies = ["spotdl==4.5.2"]
 
 [project.scripts]
 tkkg = "tkkgdownloader.cli:main"
