@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by Oliver. Implementation completed on branch `fix/spotify-album-resolution`. Automated tests and GitHub Actions verification are pending. Real Windows integration verification is pending.
+Approved and implemented. Pull request #2 was squash merged into `main`. All automated unit tests passed in GitHub Actions. Real Windows integration verification remains pending.
 
 ## Implementation summary
 
@@ -22,9 +22,10 @@ Approved by Oliver. Implementation completed on branch `fix/spotify-album-resolu
 
 ## Verification
 
-- Automated tests: pending.
-- GitHub Actions: pending.
-- Manual Windows test with episode 150: pending.
+- Automated unit tests: passed.
+- GitHub Actions run #15: passed.
+- Pull request #2: merged into `main`.
+- Manual Windows test with episode 150 using the new code: pending.
 - Manual test with a second episode: pending.
 - Playback and range verification: pending.
 
