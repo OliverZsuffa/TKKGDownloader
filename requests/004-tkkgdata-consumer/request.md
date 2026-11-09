@@ -1,7 +1,7 @@
 # Request 004: Make TKKGDownloader a TKKGData consumer
 
 ## Status
-Awaiting approval. Planning only. No downloader implementation is authorized yet.
+Approved by Oliver on 2026-11-09. Implementation in progress.
 
 ## Objective
 Change TKKGDownloader so it consumes episode and verified release metadata from TKKGData. It should no longer retrieve its episode catalogue from TKKGTracker or independently discover Spotify albums and YouTube Music sources.
@@ -34,12 +34,12 @@ The downloader resolves the requested episode and verified source release from T
 
 ## Functional requirements
 1. Retrieve episode identity and official title from the published TKKGData dataset.
-2. Retrieve verified Spotify album metadata and track records from TKKGData.
-3. Retrieve verified YouTube Music playlist URL and individual song URLs from TKKGData when available.
-4. Prefer verified exact source mappings over independent text search.
+2. Retrieve verified Spotify album metadata and track pairing records from TKKGData.
+3. Retrieve the verified YouTube Music playlist URL and exact individual song URLs paired with their Spotify track URLs from TKKGData.
+4. Prefer the verified YouTube Music playlist paired with its Spotify album. If unavailable or unsuccessful, use the exact individual YouTube Music song and Spotify track URL pairs. Never perform independent text search.
 5. Never write discovered or corrected metadata back to TKKGData from the downloader.
 6. Do not silently substitute an unverified release or incomplete track list.
-7. Validate dataset version and record structure before using the data.
+7. Validate the dataset metadata schema version, episode count, record structure, verified release status, provider IDs, URLs, and track ordering before using the data.
 8. Handle network failures with a clear error. A small local cache may be used only if its freshness and version behaviour are explicitly designed and documented.
 9. Keep the current command line interface, episode range handling, FFmpeg merge, output naming, overwrite protection, and per-episode failure reporting.
 10. Keep the implementation Windows-friendly and avoid introducing a heavy runtime dependency solely to read JSON.
@@ -51,7 +51,7 @@ The downloader resolves the requested episode and verified source release from T
 - Replace the TKKGTracker catalogue endpoint with the TKKGData endpoint.
 - Add a small TKKGData client and contract validation.
 - Adapt source selection to use verified Spotify and YouTube Music mappings.
-- Test spotDL's supported playlist pairing and direct individual-track handling before choosing the final invocation.
+- Use spotDL's documented YouTube Music playlist and Spotify album pairing, with exact individual YouTube Music song and Spotify track URL pairs as fallback.
 - Keep dynamic completeness checks based on actual validated track records.
 - Add explicit behaviour for episodes with missing or incomplete verified audio mappings.
 - Add fixtures and automated tests for data loading, schema compatibility, track selection, and error handling.
@@ -79,10 +79,10 @@ The downloader resolves the requested episode and verified source release from T
 - [ ] Episode metadata is loaded from the TKKGData dataset.
 - [ ] The downloader validates dataset version and required fields.
 - [ ] A verified Spotify album mapping is used without a new Spotify text search.
-- [ ] A verified YouTube Music playlist mapping can be paired with the Spotify album when supported by the installed tool.
-- [ ] Verified individual YouTube Music song URLs are available to the downloader as a track-level source mapping.
+- [ ] A verified YouTube Music playlist mapping is paired with the Spotify album.
+- [ ] Verified individual YouTube Music song URLs are paired with their exact Spotify track URLs and available as a track-level fallback.
 - [ ] Track order and completeness are validated from actual track records, not a hardcoded count or inconsistent summary field.
-- [ ] Missing, ambiguous, or invalid mappings produce a clear actionable error or the explicitly approved fallback.
+- [ ] Missing, ambiguous, or invalid mappings produce a clear actionable error. There is no unverified text-search fallback.
 - [ ] The downloader never writes to or scrapes TKKGData sources.
 - [ ] Existing CLI commands, output naming, range processing, FFmpeg merge, and overwrite protection continue to work.
 - [ ] Automated tests pass.
