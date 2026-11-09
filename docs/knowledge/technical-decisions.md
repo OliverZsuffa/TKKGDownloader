@@ -8,7 +8,7 @@ Episode titles and numbering are retrieved from the TKKGTracker dataset instead 
 
 Album text search failed for episode 150. The downloader now searches for the episode's first chapter track using the episode number, official title, and `Teil 01`. spotDL's metadata-only `save` operation resolves that track and provides its Spotify album ID. The downloader then uses the direct album URL.
 
-The first-track result must identify artist TKKG, match the requested episode and first part, and contain a valid album ID. The album metadata must refer to the same album and provide a consistent track count.
+The first-track result must identify artist TKKG, match the requested episode and first part, and contain a valid album ID. The album metadata must refer to the same album. The expected track count is derived dynamically from the complete set of song records returned by spotDL's album metadata save operation. The returned track numbers must form a complete sequence from 1 through the number of records, with no duplicates or invalid numbers. Do not rely on Spotify's inconsistent `tracks_count` field. The downloaded MP3 count must match this validated record count.
 
 ## Validate album completeness
 
@@ -41,3 +41,9 @@ Existing final files are skipped by default. The user must pass `--overwrite` to
 ## Validation status
 
 The new album resolution flow passed its automated unit tests in GitHub Actions run #15 and was merged in pull request #2. Real Windows integration and playback testing remain outstanding.
+
+## Album count and progress feedback
+
+The album track count is derived from all song records returned by spotDL's album metadata operation, not Spotify's `tracks_count` field. Track numbers must form a complete sequence from 1 through the record count. spotDL subprocesses retain terminal output and are accompanied by flushed stage messages and elapsed-time heartbeat messages every 10 seconds.
+
+Request 003 was merged in pull request #3. Automated unit tests passed in GitHub Actions. Real Windows integration testing, including episode 150 download, merge, and playback, remains outstanding.
