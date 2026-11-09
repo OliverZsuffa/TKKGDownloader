@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("episodes", type=parse_episode_spec, help="Episode number or inclusive range, e.g. 1 or 1-10")
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Output directory (default: ./output)")
     parser.add_argument("--overwrite", action="store_true", help="Replace existing output files.")
-    parser.add_argument("--yes", action="store_true", help="Accept the Spotify release selected by spotDL without prompting.")
+    parser.add_argument("--yes", action="store_true", help="Skip the merge confirmation after verified source selection.")
     return parser
 
 
