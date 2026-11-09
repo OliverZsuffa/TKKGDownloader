@@ -1,7 +1,7 @@
 # Request 004: Make TKKGDownloader a TKKGData consumer
 
 ## Status
-Approved by Oliver on 2026-11-09. Implementation in progress.
+Approved by Oliver on 2026-11-09. Implementation merged to main and automated CI passing. Real audio download and Windows end-to-end checks remain outstanding.
 
 ## Objective
 Change TKKGDownloader so it consumes episode and verified release metadata from TKKGData. It should no longer retrieve its episode catalogue from TKKGTracker or independently discover Spotify albums and YouTube Music sources.
@@ -76,18 +76,18 @@ The downloader resolves the requested episode and verified source release from T
 - Do not remove the current data path until the TKKGData endpoint and contract are live and verified.
 
 ## Acceptance criteria
-- [ ] Episode metadata is loaded from the TKKGData dataset.
-- [ ] The downloader validates dataset version and required fields.
+- [x] Episode metadata is loaded from the TKKGData dataset.
+- [x] The downloader validates dataset version and required fields.
 - [ ] A verified Spotify album mapping is used without a new Spotify text search.
 - [ ] A verified YouTube Music playlist mapping is paired with the Spotify album.
 - [ ] Verified individual YouTube Music song URLs are paired with their exact Spotify track URLs and available as a track-level fallback.
 - [ ] Track order and completeness are validated from actual track records, not a hardcoded count or inconsistent summary field.
 - [ ] Missing, ambiguous, or invalid mappings produce a clear actionable error. There is no unverified text-search fallback.
 - [ ] The downloader never writes to or scrapes TKKGData sources.
-- [ ] Existing CLI commands, output naming, range processing, FFmpeg merge, and overwrite protection continue to work.
-- [ ] Automated tests pass.
+- [x] Existing CLI commands, output naming, range processing, FFmpeg merge, and overwrite protection continue to work.
+- [x] Automated tests pass.
 - [ ] Windows manual tests cover episode 150, a second episode with different track count, a short range, merge playback, and overwrite protection.
-- [ ] README and knowledge base describe TKKGDownloader as a TKKGData consumer.
+- [x] README and knowledge base describe TKKGDownloader as a TKKGData consumer.
 
 ## Dependencies
 - TKKGData request 001 must publish a validated dataset and stable consumer contract.
