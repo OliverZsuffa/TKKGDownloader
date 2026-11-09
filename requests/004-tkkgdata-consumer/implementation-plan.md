@@ -1,6 +1,6 @@
 # Implementation plan: Make TKKGDownloader a TKKGData consumer
 
-**Status:** Approved by Oliver on 2026-11-09. Implementation in progress.
+**Status:** Implemented and merged to main. Consolidated CI and live TKKGData contract smoke test passed. Real audio download and Windows end-to-end verification remain outstanding.
 
 ## Architecture boundary
 
