@@ -1,48 +1,50 @@
 # Testing plan: Request 004
 
-**Status:** Planned only. No implementation or test execution has started.
+**Status:** Automated tests are being implemented. Real audio downloads and Windows playback remain manual.
 
-## Dataset client
-1. Load a valid TKKGData fixture.
-   Expected: episode title, stable ID, and verified release metadata parse correctly.
-2. Load an unsupported schema version.
+## TKKGData client
+1. Load a valid dataset and metadata fixture.
+   Expected: episode titles and optional audio_release data parse correctly.
+2. Load an unsupported schema version or mismatched episode count.
    Expected: clear compatibility error.
-3. Simulate invalid JSON, HTTP failure, and missing episode.
-   Expected: clear errors and no silent fallback to unrelated data.
-4. If a local cache is implemented, simulate a network failure.
-   Expected: only a compatible validated cache is used.
+3. Load invalid JSON, malformed records, duplicate numbers, or numbering gaps.
+   Expected: clear error before any download.
+4. Simulate HTTP failure.
+   Expected: clear TKKGData retrieval error and no fallback to TKKGTracker.
 
-## Source mapping
-1. Resolve episode 150 from TKKGData.
-   Expected: correct Spotify album, 40 actual Spotify track records, and verified YouTube Music playlist and individual song URLs where confirmed.
-2. Test a different episode with a different number of tracks.
-   Expected: expected count is derived dynamically.
-3. Test missing playlist but complete individual song URLs.
-   Expected: downloader follows the approved track-level path.
-4. Test incomplete, duplicate, ambiguous, or reordered song mappings.
-   Expected: downloader rejects the mapping rather than silently creating an incomplete episode.
-5. Test an inconsistent provider summary count.
-   Expected: actual validated track records determine completeness.
+## Verified source mapping
+1. Validate a complete verified Spotify and YouTube Music mapping.
+   Expected: a download plan with Spotify album, playlist, and individual track pairs.
+2. Test an absent playlist with complete individual track URLs.
+   Expected: individual track fallback remains available.
+3. Test unverified status, missing fields, invalid IDs, mismatched URLs, count mismatch, and reordered tracks.
+   Expected: reject before running spotDL.
+4. Test playlist download failure.
+   Expected: attempt exact individual YouTube Music and Spotify track URL pairs.
+5. Test individual track download failure.
+   Expected: report the track and do not merge partial audio.
 
 ## Download and merge
-1. Run a known episode on Windows.
-   Expected: exact selected sources are shown and the correct tracks are downloaded in order.
-2. Merge the downloaded tracks.
+1. Run episode 150 on Windows when its verified mapping is published.
+   Expected: all 40 actual matched tracks download in order.
+2. Run a second episode with a different track count.
+   Expected: count derives from the verified data, not a constant.
+3. Merge the downloaded tracks.
    Expected: one non-empty playable MP3 is produced.
-3. Run a short range.
-   Expected: one MP3 per episode and per-episode failure reporting.
-4. Test existing output and --overwrite.
+4. Run a short episode range.
+   Expected: one output per successful episode and per-episode failure reporting.
+5. Test existing output and --overwrite.
    Expected: existing output is protected unless explicitly overridden.
-5. Test --yes.
+6. Test --yes.
    Expected: confirmation is skipped without changing source selection or validation.
 
 ## Regression
 1. Run py -m unittest discover -s tests -v.
-   Expected: all automated tests pass.
-2. Confirm no runtime request is made to TKKGTracker's catalogue endpoint.
-   Expected: shared episode data comes only from TKKGData.
-3. Confirm no scraper or write-back code exists in TKKGDownloader.
+   Expected: all tests pass.
+2. Search downloader code for TKKGTracker, Spotify search, and YouTube Music search.
+   Expected: no runtime source discovery remains.
+3. Confirm there is no write-back, scraper, or competing catalogue.
    Expected: downloader is a read-only consumer.
 
 ## Actual observations
-Record Oliver's Windows and playback observations here without replacing earlier results.
+Automated test results will be recorded in notes.md. Windows download, merge playback, and overwrite observations remain pending until Oliver runs the downloader locally.
