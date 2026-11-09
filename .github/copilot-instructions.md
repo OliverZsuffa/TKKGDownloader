@@ -1,7 +1,8 @@
 # Repository instructions
 
 ## Start here
-- Read README.md, docs/knowledge/README.md, and all relevant Knowledge Base documents before changing the project.
+- Read README.md and docs/README.md.
+- Read docs/knowledge/README.md and all relevant Knowledge Base documents before changing the project.
 - Read the active request and its implementation plan before working on a feature.
 - Read docs/decisions.md when a decision is relevant.
 
