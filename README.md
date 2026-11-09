@@ -5,109 +5,86 @@ A Windows friendly command line tool that creates one MP3 file per TKKG audio dr
 ## Requirements
 
 - Python 3.11 or newer
-- [spotDL](https://spotdl.readthedocs.io/en/latest/)
+- spotDL 4.5.2 or a compatible version
 - FFmpeg 4.2 or newer, available on PATH
 - Deno is recommended by spotDL for some YouTube downloads
 
 Install spotDL:
 
-```powershell
-py -m pip install --upgrade spotdl
-```
+    py -m pip install --upgrade spotdl
 
 Check that both external tools are available:
 
-```powershell
-spotdl --version
-ffmpeg -version
-```
-
-If FFmpeg is not installed, follow the [spotDL installation guide](https://spotdl.readthedocs.io/en/latest/installation/).
+    spotdl --version
+    ffmpeg -version
 
 ## Run from a repository checkout
 
 Open PowerShell in the project folder:
 
-```powershell
-py -m pip install -e .
-python tkkg.py 1
-```
+    py -m pip install -e .
+    python tkkg.py 150
 
 You can also use the installed command:
 
-```powershell
-tkkg 1
-```
+    tkkg 150
 
 ## Usage
 
 Download one episode:
 
-```powershell
-python tkkg.py 1
-```
+    python tkkg.py 1
 
 Download an inclusive range:
 
-```powershell
-python tkkg.py 1-10
-```
+    python tkkg.py 1-10
 
-Accept the release selected by spotDL without a confirmation prompt:
+Skip the merge confirmation after verified source selection:
 
-```powershell
-python tkkg.py 1 --yes
-```
+    python tkkg.py 150 --yes
 
 Choose another output folder:
 
-```powershell
-python tkkg.py 1 --output-dir "D:\\Music\\TKKG"
-```
+    python tkkg.py 1 --output-dir "D:\\Music\\TKKG"
 
 Replace an existing output:
 
-```powershell
-python tkkg.py 1 --overwrite
-```
+    python tkkg.py 1 --overwrite
 
 Get help:
 
-```powershell
-python tkkg.py --help
-```
+    python tkkg.py --help
 
-## What it does
+## Data ownership
 
-1. Downloads the current episode catalog from [TKKGTracker](https://github.com/OliverZsuffa/TKKGtracker).
-2. Gets the official episode title for the requested episode number.
-3. Builds an album search query containing the episode number and title.
-4. Passes the query to spotDL, which resolves Spotify metadata and searches YouTube for matching audio.
-5. Saves the selected album tracks as MP3 files in a temporary directory.
-6. Shows the selected release and ordered track list for confirmation.
-7. Uses FFmpeg to merge the tracks into one MP3.
-8. Writes the finished file to `output/` by default.
+[TKKGData](https://github.com/OliverZsuffa/TKKGData) is the single source of truth for episode metadata, verified Spotify releases, YouTube Music playlist URLs, individual song URLs, and source verification.
 
-**Important:** spotDL does not download audio directly from Spotify. It uses Spotify metadata to identify tracks and finds matching audio on YouTube. Make sure you have the rights and permissions required for any audio you download.
+TKKGDownloader fetches the published TKKGData episode array and its dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
 
-The TKKGTracker `tracks` field is deliberately not used for track selection. It contains chapter information and does not reliably match Spotify's release track divisions.
+The dataset contains a verified Spotify album URL and, where available, a verified YouTube Music playlist URL. It also stores exact Spotify track URLs paired with individual YouTube Music song URLs. The downloader prefers the verified playlist and Spotify album pairing. If that path fails or the playlist is unavailable, it falls back to the exact individual track pairs. It never falls back to unverified text search.
 
-## Output
+If an episode has no complete verified audio mapping, the downloader stops with an actionable error. Audio discovery and correction belong in TKKGData.
+
+## Download and output
+
+The downloader uses spotDL to retrieve the exact source pairings, validates the downloaded track count and contiguous order against TKKGData, then merges the tracks with FFmpeg.
 
 For example:
 
-`output/TKKG 001 - Die Jagd nach den Millionendieben.mp3`
+    output/TKKG 150 - Heiße Nächte im Dezember.mp3
 
-Existing files are skipped by default. Use `--overwrite` to replace them.
+Existing files are skipped by default. Use --overwrite to replace them. Episode range processing reports failures per episode and continues with the remaining requested episodes.
+
+spotDL uses Spotify metadata and downloads audio from the explicitly paired YouTube source. Make sure you have the rights and permissions required for any audio you download.
 
 ## Tests
 
 Run the automated tests:
 
-```powershell
-py -m unittest discover -s tests -v
-```
+    py -m unittest discover -s tests -v
+
+The tests mock network and subprocess calls. They do not download real audio.
 
 ## Project workflow
 
-See [Requests](requests/README.md) and the [Knowledge Base](docs/knowledge/README.md).
+See [Requests](requests/README.md), the [Knowledge Base](docs/knowledge/README.md), and [Request 004](requests/004-tkkgdata-consumer/request.md).

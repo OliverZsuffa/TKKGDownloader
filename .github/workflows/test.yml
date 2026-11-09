@@ -1,0 +1,33 @@
+name: Test TKKGDownloader
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Compile Python modules
+        run: python -m compileall -q src tests
+      - name: Smoke test published TKKGData contract
+        run: |
+          python - <<'PY'
+          from tkkgdownloader.episodes import fetch_catalog
+          catalog = fetch_catalog()
+          assert 150 in catalog, "Episode 150 is missing from TKKGData"
+          print(f"Fetched {len(catalog)} TKKGData episodes. Episode 150: {catalog[150].title}")
+          PY
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v

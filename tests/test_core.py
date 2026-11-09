@@ -1,18 +1,37 @@
+from __future__ import annotations
+
 import argparse
+import json
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-import subprocess
 
 from tkkgdownloader.cli import parse_episode_spec
-from tkkgdownloader.episodes import Episode, get_episode, parse_catalog
-from tkkgdownloader.merger import ordered_tracks, track_number
-from tkkgdownloader.spotify import (
-    build_first_track_query,
-    resolve_album_metadata,
-    validate_album_metadata,
+from tkkgdownloader.episodes import (
+    DATASET_METADATA_URL,
+    EPISODES_URL,
+    Episode,
+    fetch_catalog,
+    get_episode,
+    parse_catalog,
 )
 from tkkgdownloader.downloader import _run_with_progress
+from tkkgdownloader.merger import ordered_tracks, track_number
+
+
+def episode_record(number: int, title: str) -> dict:
+    return {
+        "number": number,
+        "title": title,
+        "physical_releases": [],
+        "tracks": [],
+        "cast": [],
+        "credits": [],
+        "ratings": [],
+        "sources": [],
+        "listening_links": [],
+    }
 
 
 class EpisodeParsingTests(unittest.TestCase):
@@ -32,104 +51,97 @@ class EpisodeParsingTests(unittest.TestCase):
 class CatalogTests(unittest.TestCase):
     def test_parse_catalog(self):
         catalog = parse_catalog([
-            {"number": 1, "title": " Die Jagd nach den Millionendieben "},
-            {"number": "2", "title": "Der blinde Hellseher"},
-            {"number": "invalid", "title": "Ignored"},
+            episode_record(1, " Die Jagd nach den Millionendieben "),
+            episode_record("2", "Der blinde Hellseher"),
         ])
         self.assertEqual(catalog[1], Episode(1, "Die Jagd nach den Millionendieben"))
         self.assertEqual(get_episode(catalog, 2).title, "Der blinde Hellseher")
 
     def test_missing_episode(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "TKKGData"):
             get_episode({1: Episode(1, "Test")}, 2)
 
-
-class SpotifyResolutionTests(unittest.TestCase):
-    def setUp(self):
-        self.episode = Episode(150, "Heiße Nächte im Dezember")
-        self.track = {
-            "name": "150 - Heiße Nächte im Dezember - Teil 01",
-            "artists": ["TKKG"],
-            "artist": "TKKG",
-            "album_name": "150/Heiße Nächte im Dezember",
-            "album_id": "0ZqyFeMXxCyIJvYptGlnn1",
-            "tracks_count": 25,
-        }
-
-    def test_query_targets_first_chapter(self):
-        self.assertEqual(
-            build_first_track_query(self.episode),
-            "TKKG 150 Heiße Nächte im Dezember Teil 01",
-        )
-
-    def test_resolve_album_from_first_track_ignores_inconsistent_spotify_count(self):
-        album = resolve_album_metadata([self.track], self.episode)
-        self.assertEqual(album["album_id"], "0ZqyFeMXxCyIJvYptGlnn1")
-        self.assertEqual(
-            album["album_url"],
-            "https://open.spotify.com/album/0ZqyFeMXxCyIJvYptGlnn1",
-        )
-        self.assertNotIn("tracks_count", album)
-
-    def test_reject_empty_or_multiple_results(self):
-        for payload in ([], [self.track, self.track]):
-            with self.subTest(payload=payload), self.assertRaises(ValueError):
-                resolve_album_metadata(payload, self.episode)
-
-    def test_reject_wrong_artist(self):
-        track = {**self.track, "artists": ["Someone Else"], "artist": "Someone Else"}
-        with self.assertRaisesRegex(ValueError, "artist named TKKG"):
-            resolve_album_metadata([track], self.episode)
-
-    def test_reject_wrong_episode_or_part(self):
-        for name in (
-            "151 - Heiße Nächte im Dezember - Teil 01",
-            "150 - Heiße Nächte im Dezember - Teil 02",
-        ):
-            with self.subTest(name=name), self.assertRaises(ValueError):
-                resolve_album_metadata([{**self.track, "name": name}], self.episode)
-
-    def test_reject_missing_album_id(self):
-        track = {key: value for key, value in self.track.items() if key != "album_id"}
-        with self.assertRaisesRegex(ValueError, "album ID"):
-            resolve_album_metadata([track], self.episode)
-
-    def test_album_count_is_derived_from_all_returned_songs(self):
-        album = resolve_album_metadata([self.track], self.episode)
-        records = [
-            {"album_id": album["album_id"], "track_number": n}
-            for n in range(1, 41)
-        ]
-        self.assertEqual(validate_album_metadata(records, album), 40)
-
-    def test_album_metadata_must_be_a_complete_track_sequence(self):
-        album = resolve_album_metadata([self.track], self.episode)
-        complete = [
-            {"album_id": album["album_id"], "track_number": n}
-            for n in range(1, 5)
-        ]
-        self.assertEqual(validate_album_metadata(complete, album), 4)
-        with self.assertRaisesRegex(ValueError, "complete track sequence"):
-            validate_album_metadata(complete[:2] + complete[3:], album)
-
-    def test_wrong_album_and_duplicate_track_numbers_rejected(self):
-        album = resolve_album_metadata([self.track], self.episode)
-        with self.assertRaisesRegex(ValueError, "different album"):
-            validate_album_metadata(
-                [
-                    {"album_id": album["album_id"], "track_number": 1},
-                    {"album_id": "another-album", "track_number": 2},
-                ],
-                album,
-            )
+    def test_reject_duplicate_numbers(self):
         with self.assertRaisesRegex(ValueError, "duplicate"):
-            validate_album_metadata(
-                [
-                    {"album_id": album["album_id"], "track_number": 1},
-                    {"album_id": album["album_id"], "track_number": 1},
-                ],
-                album,
-            )
+            parse_catalog([episode_record(1, "One"), episode_record(1, "Duplicate")])
+
+    def test_reject_numbering_gaps(self):
+        with self.assertRaisesRegex(ValueError, "gaps"):
+            parse_catalog([episode_record(1, "One"), episode_record(3, "Three")])
+
+    def test_reject_missing_ui_required_array(self):
+        record = episode_record(1, "One")
+        del record["listening_links"]
+        with self.assertRaisesRegex(ValueError, "listening_links"):
+            parse_catalog([record])
+
+    def test_fetch_catalog_validates_metadata_before_returning_episodes(self):
+        metadata = {"schema_version": "1.0.0", "episode_count": 1}
+        payload = [episode_record(1, "One")]
+
+        class FakeResponse:
+            def __init__(self, value):
+                self.value = json.dumps(value).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self.value
+
+        with patch(
+            "tkkgdownloader.episodes.urllib.request.urlopen",
+            side_effect=[FakeResponse(metadata), FakeResponse(payload)],
+        ) as urlopen:
+            catalog = fetch_catalog()
+        self.assertEqual(catalog[1].title, "One")
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertIn("TKKGData/main", DATASET_METADATA_URL)
+        self.assertIn("TKKGData/main", EPISODES_URL)
+
+    def test_fetch_catalog_rejects_unsupported_schema(self):
+        metadata = {"schema_version": "2.0.0", "episode_count": 1}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(metadata).encode("utf-8")
+
+        with patch("tkkgdownloader.episodes.urllib.request.urlopen", return_value=FakeResponse()):
+            with self.assertRaisesRegex(ValueError, "Unsupported TKKGData schema"):
+                fetch_catalog()
+
+    def test_fetch_catalog_rejects_metadata_count_mismatch(self):
+        metadata = {"schema_version": "1.0.0", "episode_count": 2}
+        payload = [episode_record(1, "One")]
+
+        class FakeResponse:
+            def __init__(self, value):
+                self.value = json.dumps(value).encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self.value
+
+        with patch(
+            "tkkgdownloader.episodes.urllib.request.urlopen",
+            side_effect=[FakeResponse(metadata), FakeResponse(payload)],
+        ):
+            with self.assertRaisesRegex(ValueError, "reports 2"):
+                fetch_catalog()
 
 
 class ProgressRunnerTests(unittest.TestCase):
