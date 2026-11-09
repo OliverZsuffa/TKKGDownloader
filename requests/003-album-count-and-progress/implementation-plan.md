@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by the user. Merged into main. Automated tests passed in GitHub Actions. Manual Windows integration testing remains pending.
+Approved by the user. Merged into main. Automated tests passed in GitHub Actions. Automated tests passed. Manual Windows integration exposed a separate YouTube Music matching failure.
 
 ## Problem
 
@@ -80,3 +80,10 @@ A second episode and a range should be tested after episode 150 succeeds.
 
 The progress heartbeat should be implemented without swallowing or buffering spotDL's own terminal output. A subprocess polling loop with inherited stdout and stderr is the preferred approach. Heartbeat timing should be modest, for example every 10 seconds, and should not affect the subprocess.
 
+
+
+## Manual integration test findings
+
+The user ran `py tkkg.py 150` on Windows after merging Request 003. The downloader successfully resolved the Spotify album, retrieved 40 metadata records, validated all 40 tracks, and started the download. spotDL then repeatedly reported that YouTube Music returned no usable results for many tracks, although the user confirmed that the official YouTube Music album playlist is available: `https://music.youtube.com/playlist?list=OLAK5uy_mQRbJNANh1H4CKbmM5ez5LSW1HJFvE3QI`. The user stopped the run early. Temporary directory cleanup then raised `[WinError 32]` because a process still had a file open. The metadata and progress changes are verified, but full download, merge, and playback are not.
+
+The next investigation should test spotDL's documented manual matching format using the official YouTube Music album URL paired with the corresponding Spotify album URL. Do not assume the playlist URL can be generalized to other episodes without checking their official sources. Also investigate process termination and temporary directory cleanup when the user interrupts a download.
