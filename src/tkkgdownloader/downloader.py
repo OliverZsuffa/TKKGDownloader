@@ -52,7 +52,7 @@ def download_episode(
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
         work_dir = Path(temp)
-        output_template = "{album}/{track-number:03d} - {title}.{output-ext}"
+        output_template = "{album}/{track-number} - {title}.{output-ext}"
         command = [
             *spotdl, "download", query,
             "--format", "mp3",
