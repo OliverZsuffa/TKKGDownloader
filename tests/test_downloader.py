@@ -63,7 +63,7 @@ class DownloaderSourceTests(unittest.TestCase):
         episode = Episode(150, "Heiße Nächte im Dezember", audio_release())
         commands = []
         with tempfile.TemporaryDirectory() as temp_dir, \
-             patch("tkkgdownloader.downloader._command", side_effect=[["spotdl"], "ffmpeg"]), \
+             patch("tkkgdownloader.downloader._command", side_effect=[["spotdl"], ["ffmpeg"]]), \
              patch("tkkgdownloader.downloader._run_with_progress", side_effect=self._fake_successful_download(commands)), \
              patch("tkkgdownloader.downloader.merge_tracks") as merge:
             result = download_episode(episode, Path(temp_dir), assume_yes=True)
