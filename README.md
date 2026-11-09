@@ -5,7 +5,7 @@ A Windows friendly command line tool that creates one MP3 file per TKKG audio dr
 ## Requirements
 
 - Python 3.11 or newer
-- spotDL
+- spotDL 4.5.2 or a compatible version
 - FFmpeg 4.2 or newer, available on PATH
 - Deno is recommended by spotDL for some YouTube downloads
 
@@ -23,11 +23,11 @@ Check that both external tools are available:
 Open PowerShell in the project folder:
 
     py -m pip install -e .
-    python tkkg.py 1
+    python tkkg.py 150
 
 You can also use the installed command:
 
-    tkkg 1
+    tkkg 150
 
 ## Usage
 
@@ -39,9 +39,9 @@ Download an inclusive range:
 
     python tkkg.py 1-10
 
-Accept the selected release without a confirmation prompt:
+Skip the merge confirmation after verified source selection:
 
-    python tkkg.py 1 --yes
+    python tkkg.py 150 --yes
 
 Choose another output folder:
 
@@ -55,23 +55,27 @@ Get help:
 
     python tkkg.py --help
 
-## What it does
+## Data ownership
 
-The current implementation retrieves episode metadata from TKKGTracker, resolves Spotify metadata with spotDL, downloads matching YouTube audio, validates track order, and merges the tracks with FFmpeg.
+[TKKGData](https://github.com/OliverZsuffa/TKKGData) is the single source of truth for episode metadata, verified Spotify releases, YouTube Music playlist URLs, individual song URLs, and source verification.
 
-The target architecture is to retrieve episode and verified Spotify and YouTube Music source mappings from [TKKGData](https://github.com/OliverZsuffa/TKKGData). TKKGData will own scraping, source discovery, verification, and the shared dataset. TKKGDownloader will remain responsible for downloading and merging audio.
+TKKGDownloader fetches the published TKKGData episode array and its dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
 
-This migration is proposed in [Request 004](requests/004-tkkgdata-consumer/request.md) and has not yet been implemented. Until the migration is approved and verified, the current implementation and data source remain in effect.
+The dataset contains a verified Spotify album URL and, where available, a verified YouTube Music playlist URL. It also stores exact Spotify track URLs paired with individual YouTube Music song URLs. The downloader prefers the verified playlist and Spotify album pairing. If that path fails or the playlist is unavailable, it falls back to the exact individual track pairs. It never falls back to unverified text search.
 
-spotDL does not download audio directly from Spotify. It uses Spotify metadata to identify tracks and finds matching audio on YouTube. Make sure you have the rights and permissions required for any audio you download.
+If an episode has no complete verified audio mapping, the downloader stops with an actionable error. Audio discovery and correction belong in TKKGData.
 
-## Output
+## Download and output
+
+The downloader uses spotDL to retrieve the exact source pairings, validates the downloaded track count and contiguous order against TKKGData, then merges the tracks with FFmpeg.
 
 For example:
 
-    output/TKKG 001 - Die Jagd nach den Millionendieben.mp3
+    output/TKKG 150 - Heiße Nächte im Dezember.mp3
 
-Existing files are skipped by default. Use --overwrite to replace them.
+Existing files are skipped by default. Use --overwrite to replace them. Episode range processing reports failures per episode and continues with the remaining requested episodes.
+
+spotDL uses Spotify metadata and downloads audio from the explicitly paired YouTube source. Make sure you have the rights and permissions required for any audio you download.
 
 ## Tests
 
@@ -79,6 +83,8 @@ Run the automated tests:
 
     py -m unittest discover -s tests -v
 
+The tests mock network and subprocess calls. They do not download real audio.
+
 ## Project workflow
 
-See [Requests](requests/README.md) and the [Knowledge Base](docs/knowledge/README.md).
+See [Requests](requests/README.md), the [Knowledge Base](docs/knowledge/README.md), and [Request 004](requests/004-tkkgdata-consumer/request.md).
