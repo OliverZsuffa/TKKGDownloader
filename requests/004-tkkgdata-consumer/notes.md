@@ -32,7 +32,14 @@ GitHub Actions run 42699939555 passed:
 
 GitHub Actions run 42699797937 also passed the project install, compileall, and 27 unit tests before the additional playlist type regression test was added.
 
-The live TKKGData smoke test is being added to CI and will be recorded when its workflow completes.
+GitHub Actions run 42700122396 passed:
+- Project installation and Python module compilation passed.
+- The live TKKGData smoke test fetched 243 records from the main endpoint and verified episode 150's title.
+- All 28 unit tests passed.
+
+The spotDL 4.5.2 source was inspected directly to confirm the supported manual pairing formats: YouTube Music album URL with Spotify album URL, and YouTube watch URL with Spotify track URL. No real audio download was performed in CI.
+
+At the time of this note, the initial TKKGData catalogue contains no verified audio_release mapping yet. The audio enrichment workflow is being corrected and run separately. The downloader will correctly reject an episode until TKKGData contains a complete verified mapping.
 
 ## Remaining verification
 
