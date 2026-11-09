@@ -98,6 +98,10 @@ def validate_audio_release(audio_release: Any) -> dict[str, Any]:
             raise ValueError("TKKGData YouTube Music playlist URL does not match its playlist ID.")
         if playlist.get("track_count") != expected_count:
             raise ValueError("TKKGData YouTube Music playlist track count does not match Spotify.")
+        # spotDL 4.5.2 pairs OLAK YouTube Music albums with Spotify albums.
+        # A PL YouTube playlist would require a Spotify playlist, not this album.
+        if not playlist_id.startswith("OLAK5uy_"):
+            playlist_url = None
 
     return {
         "spotify_album_url": album_url,
