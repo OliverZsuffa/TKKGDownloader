@@ -2,25 +2,35 @@
 
 ## Purpose
 
-TKKGDownloader is a Python command line tool for preparing TKKG audio drama episodes as individual MP3 files for offline listening.
+TKKGDownloader is a Windows friendly Python command line tool that downloads a TKKG audio drama episode and merges its parts into one MP3 file.
 
-## Core workflow
+## Responsibility boundary
 
-The intended workflow is to accept an episode number or range, resolve official episode metadata from TKKGTracker, find the matching Spotify release using episode number and title, download its Spotify tracks with spotDL, and merge them into one MP3 per episode with FFmpeg.
+TKKGData is the canonical source for episode metadata and verified provider mappings:
+- Repository: https://github.com/OliverZsuffa/TKKGData
+- Episode dataset: https://raw.githubusercontent.com/OliverZsuffa/TKKGData/main/data/episodes.json
+- Dataset metadata: https://raw.githubusercontent.com/OliverZsuffa/TKKGData/main/data/dataset-metadata.json
 
-## Source of episode metadata
+TKKGDownloader is a read only consumer. It does not scrape sources, search Spotify or YouTube Music, maintain a second catalogue, or write metadata back to TKKGData.
 
-- Repository: https://github.com/OliverZsuffa/TKKGtracker
-- Dataset: https://raw.githubusercontent.com/OliverZsuffa/TKKGtracker/main/data/episodes.json
+## Download workflow
 
-The episode number and official title are relevant metadata. The dataset's `tracks` array describes chapter information and must not be assumed to match Spotify's track divisions.
+1. Fetch and validate the TKKGData dataset and schema version.
+2. Resolve the requested episode number and official title.
+3. Validate its verified Spotify album, YouTube Music playlist, and ordered individual track pairings.
+4. Prefer the YouTube Music playlist paired with the Spotify album.
+5. If playlist download fails or no playlist is available, use the exact individual YouTube Music song and Spotify track URL pairs.
+6. Validate the downloaded track count, numbering, and album folder.
+7. Ask for confirmation unless `--yes` was supplied.
+8. Merge the episode parts into one MP3 with FFmpeg.
+
+The dataset's `tracks` array describes episode chapter segmentation. It is not the provider album track list. Download completeness comes from the verified `audio_release` mapping.
 
 ## Intended environment
 
-- Windows
-- PowerShell
-- Python
-- spotDL
+- Windows and PowerShell
+- Python 3.11 or later
+- spotDL 4.5.2
 - FFmpeg
 
-These are project requirements and intended dependencies. Exact supported versions remain to be validated during implementation.
+Install the project with `py -m pip install -e .`. FFmpeg must also be installed and available on PATH.
