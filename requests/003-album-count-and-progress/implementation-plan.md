@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by the user. Implementation in progress.
+Approved by the user. Merged into main. Automated tests passed in GitHub Actions. Manual Windows integration testing remains pending.
 
 ## Problem
 
