@@ -1,120 +1,110 @@
 # Implementation plan: Make TKKGDownloader a TKKGData consumer
 
-**Status:** Proposed. Awaiting Oliver's explicit approval. Planning only.
+**Status:** Approved by Oliver on 2026-11-09. Implementation in progress.
 
-## 1. Preconditions
-1. Read TKKGData request 001 and its approved schema, example dataset, stable endpoint, and consumer documentation.
-2. Confirm the dataset version and compatibility policy.
-3. Confirm which fields are guaranteed for verified Spotify releases, playlist mappings, and individual song mappings.
-4. Record the current main commit, test results, and Windows integration status.
-5. Do not switch the production downloader until a valid TKKGData release is published.
+## Architecture boundary
 
-## 2. Baseline audit
-Inspect:
-- src/tkkgdownloader/episodes.py for current TKKGTracker JSON retrieval and episode lookup.
-- src/tkkgdownloader/spotify.py for spotDL metadata resolution and album selection.
-- src/tkkgdownloader/downloader.py for downloads and file validation.
-- src/tkkgdownloader/merger.py for FFmpeg merging and output safety.
-- CLI parsing, tests, README, and knowledge-base decisions.
-- Request 009 and TKKGtracker draft PR #14 for the source mapping design and known episode 150 evidence.
+TKKGData owns the canonical episode catalogue, scraping, provider discovery, verification, and publication. TKKGDownloader is a read-only consumer. It owns only CLI behaviour, audio download execution, downloaded-file validation, FFmpeg merging, output naming, overwrite protection, and local files.
 
-Record all current external calls and identify which become unnecessary when metadata comes from TKKGData.
+## 1. Dataset client
 
-## 3. TKKGData client
-1. Add a small client that retrieves the stable latest JSON endpoint.
-2. Validate dataset metadata and supported schema version.
-3. Parse the requested episode by stable ID and series/episode number.
-4. Validate the selected episode's required fields and any provider release used.
-5. Avoid adding a heavy framework. Prefer the standard library unless the contract or tests justify a dependency.
-6. Decide whether to fetch per invocation or use a bounded local cache. Do not create a second editable catalogue.
-7. Provide clear errors for HTTP failure, invalid JSON, unsupported schema, missing episode, and missing verified source data.
+1. Fetch data/dataset-metadata.json and data/episodes.json from TKKGData at the start of each CLI invocation.
+2. Support schema major version 1.x.
+3. Validate the dataset metadata episode count against the returned array.
+4. Validate unique contiguous episode numbers, titles, and all fields required by the tracker-compatible episode record.
+5. Preserve optional audio_release metadata in the Episode object.
+6. Do not cache an independent dataset. A network or validation failure produces a clear error.
+7. Do not request TKKGTracker or scrape any source.
 
-## 4. Source selection and download flow
-The intended flow is:
-1. Parse episode number or inclusive range.
-2. Load the matching TKKGData episode record.
-3. Select the verified Spotify provider release intended for the requested edition.
-4. Validate the album ID, canonical URL, artist/title evidence, and complete Spotify track records.
-5. Select the associated verified YouTube Music playlist when present.
-6. Use the playlist and Spotify album pairing if the installed spotDL version supports it reliably.
-7. Where the playlist is unavailable or insufficient, use the verified individual YouTube Music song URLs if the chosen downloader path supports direct source URLs.
-8. Preserve Spotify track order and require a complete one-to-one mapping before claiming the release is complete.
-9. Display the selected release and track list clearly before final merge acceptance, preserving the current confirmation model where practical.
-10. Download audio, validate downloaded track count and ordering, and merge with the existing FFmpeg process.
-11. Write the completed file atomically and preserve overwrite protection.
+## 2. Verified audio source validation
 
-Do not implement the exact spotDL invocation until a focused compatibility experiment proves the stored URLs are accepted by the installed version. If individual song URLs need yt-dlp or another tool, document the trade-off and obtain approval if it changes dependencies or user-visible behaviour.
+For a requested episode, require audio_release.verification.status == verified.
 
-## 5. Track integrity
-- Never hardcode 40 tracks or another fixed count.
-- Derive expected count from the actual validated Spotify track records in TKKGData.
-- Validate unique, contiguous track numbering.
-- Match each individual YouTube Music song record to the corresponding Spotify track by explicit stored relationship and verified evidence.
-- Reject duplicate, missing, ambiguous, or out-of-order mappings unless the dataset explicitly models an edition-specific exception.
-- Do not assume archive chapter records correspond to provider album tracks.
-- Do not silently mix multiple Spotify or YouTube Music editions.
+Validate:
+- Spotify album ID and canonical album URL.
+- Spotify album title and positive track count.
+- YouTube Music individual track list and count.
+- matched_track_count.
+- Contiguous one-based track numbering.
+- Each Spotify track ID against its Spotify track URL.
+- Each YouTube Music video ID against its song URL.
+- Optional playlist ID against its playlist URL and playlist track count.
 
-## 6. Missing data and fallback
-Define explicit behaviour for:
-- No TKKGData endpoint.
-- Dataset unavailable but a compatible local cache exists.
-- No episode record.
-- Episode exists but no verified Spotify release.
-- Spotify release exists but no playlist mapping.
-- Playlist exists but individual song mappings are incomplete.
-- Provider IDs or URLs fail validation.
-- Downloaded file count differs from the verified track count.
+Reject incomplete, unverified, ambiguous, mismatched, or out-of-order source metadata before starting downloads.
 
-Any fallback to spotDL text discovery must be clearly labelled as unverified, must require the approved user interaction, and must not be written back to the dataset. Decide whether fallback remains at all after testing exact mappings.
+## 3. Download strategy
 
-## 7. Preserve downloader responsibilities
-Keep:
-- CLI syntax and episode range support.
-- User confirmation and --yes behaviour.
-- Output directory and predictable filenames.
+1. Prefer the verified YouTube Music playlist paired with the Spotify album URL using spotDL's documented manual pairing format.
+2. If the playlist is missing or the playlist download fails, fall back to each verified YouTube Music song URL paired with its exact Spotify track URL.
+3. Do not search Spotify, search YouTube Music, resolve first-track metadata, or use unverified text queries.
+4. Use the existing MP3 format, bitrate, output template, and temporary working directories.
+5. Validate that the downloaded MP3 files equal the expected track count and contain the exact contiguous sequence 1..N.
+6. Require one album output folder. Never merge partial, duplicated, or reordered downloads.
+
+The dataset's verified individual track records are the source of truth for expected count and track ordering. Never hardcode 40 or trust an inconsistent provider summary without the actual matched records.
+
+## 4. Merge and output
+
+Preserve:
+- One output MP3 per episode.
+- Existing output naming.
 - FFmpeg stream-copy attempt and re-encode fallback.
-- Atomic output handling.
+- Atomic temporary output handling.
 - Existing-file protection and --overwrite.
-- Per-episode failure reporting for ranges.
-- Windows-friendly installation and usage.
+- Confirmation prompt and --yes behaviour.
+- Inclusive episode ranges and per-episode failure reporting.
+- Windows compatibility.
 
-Do not move download execution or local audio files into TKKGData.
+Do not change the CLI syntax or introduce a new runtime framework.
 
-## 8. Automated tests
-Add fixtures for:
-- Valid dataset and compatible schema.
-- Unsupported schema version.
-- Missing episode and missing verified release.
-- Spotify album with dynamically sized track list.
-- Episode 150's 40 actual Spotify track records.
-- Verified YouTube Music playlist mapping.
-- Individual song URLs linked to Spotify tracks.
-- Missing, duplicate, ambiguous, or reordered mappings.
-- Inconsistent provider summary count.
-- HTTP failure and cache fallback if caching is implemented.
-- Existing CLI, range processing, merge, and overwrite behaviour.
+## 5. Missing data and failures
 
-Mock network and subprocess calls. Tests must not download real audio.
+- Missing episode: clear TKKGData lookup error.
+- Dataset unavailable, malformed, unsupported, or inconsistent: stop before download.
+- Missing verified audio_release: clear message that audio mapping must be added in TKKGData.
+- Invalid Spotify or YouTube Music IDs/URLs: reject before download.
+- Playlist unavailable or playlist download fails: try exact individual track pairs.
+- Individual track download failure: report the exact track and stop that episode.
+- Wrong number, duplicate, or reordered MP3 files: do not merge.
+- No unverified search fallback and no write-back to TKKGData.
 
-## 9. Windows manual verification
+## 6. Automated tests
+
+Test:
+- TKKGData metadata and episode JSON retrieval.
+- Supported and unsupported schema versions.
+- Metadata count mismatch, malformed JSON, HTTP failure, missing episode, duplicate or gapped numbering.
+- Verified and unverified audio releases.
+- Playlist ID and URL consistency.
+- Spotify track ID and URL consistency.
+- YouTube Music video ID and URL consistency.
+- Track count and contiguous order validation.
+- Playlist pairing as the preferred path.
+- Individual track pairing as fallback.
+- Playlist failure followed by successful individual track fallback.
+- Missing verified mapping and incomplete download rejection.
+- Existing CLI, episode range parsing, file ordering, merge, and overwrite behaviour.
+
+All network and subprocess operations are mocked. Automated tests do not download real audio.
+
+## 7. Windows manual verification
+
 1. Run py tkkg.py --help.
-2. Run episode 150 using the published TKKGData record.
-3. Confirm the selected Spotify release and YouTube Music source mapping.
-4. Confirm all expected tracks are downloaded in order.
-5. Confirm the merged MP3 plays and contains the complete episode.
-6. Run a second episode with a different track count.
-7. Run a short episode range and verify one output per episode.
-8. Verify existing output is skipped by default and replaced only with --overwrite.
-9. Test a missing or incomplete mapping and confirm the error is clear.
+2. Run episode 150 after TKKGData has a verified mapping.
+3. Confirm the selected Spotify album and YouTube Music source are displayed.
+4. Confirm the playlist pairing is attempted first.
+5. Confirm individual exact track pairs are used if the playlist fails.
+6. Confirm all expected MP3 tracks are present in contiguous order.
+7. Confirm the merged MP3 plays and contains the complete episode.
+8. Test a second episode with a different track count.
+9. Test a short episode range.
+10. Verify existing output is skipped by default and replaced only with --overwrite.
+11. Verify missing or incomplete mappings fail clearly without unverified search.
 
-## 10. Cutover
-1. Add the TKKGData client while retaining a testable old-source comparison during development.
-2. Compare episode titles and IDs with the existing TKKGTracker source.
-3. Verify episode 150 source resolution against the published mapping.
-4. Verify at least one episode with a different track count and one episode with missing optional source metadata.
-5. Switch the production client to TKKGData.
-6. Remove the TKKGTracker metadata URL and independent Spotify discovery only after the new flow passes.
-7. Update README, knowledge base, and request notes with actual results.
+## 8. Cutover and cleanup
 
-## 11. Definition of done
-The downloader uses TKKGData as its only shared episode and verified release metadata source, does not scrape or mutate the dataset, preserves its local download and merge behaviour, and passes automated plus Windows end-to-end verification.
+- TKKGData is already published at the stable main endpoint.
+- Replace the TKKGTracker URL and independent Spotify discovery with the TKKGData client.
+- Remove the old Spotify resolver after the new client and source validation tests pass.
+- Update README, project instructions, knowledge base, and request notes.
+- Merge only after automated checks pass and the changed-file review confirms that only the intended downloader responsibilities changed.
