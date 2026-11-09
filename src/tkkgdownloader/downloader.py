@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
-from .spotify import build_album_query
+from .spotify import (
+    build_first_track_query,
+    resolve_album_metadata,
+    validate_album_metadata,
+)
 
 
 def _command(name: str) -> list[str]:
@@ -29,6 +35,31 @@ def _command(name: str) -> list[str]:
 def _safe_filename(value: str) -> str:
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
     return re.sub(r"\s+", " ", value).strip(" .") or "Untitled"
+
+
+def _read_spotdl_file(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not read spotDL metadata file: {exc}") from exc
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise RuntimeError("spotDL created an invalid metadata file.")
+    return payload
+
+
+def _save_metadata(
+    spotdl: list[str], query: str, save_path: Path, *, episode_number: int
+) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        [*spotdl, "save", query, "--save-file", str(save_path)],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"spotDL metadata lookup failed for episode {episode_number} "
+            f"(exit code {result.returncode})."
+        )
+    return _read_spotdl_file(save_path)
 
 
 def download_episode(
@@ -48,22 +79,44 @@ def download_episode(
 
     spotdl = _command("spotdl")
     ffmpeg = _command("ffmpeg")[0]
-    query = build_album_query(episode)
+    query = build_first_track_query(episode)
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
         work_dir = Path(temp)
+        first_track_file = work_dir / "first-track.spotdl"
+        print(f"Resolving first track: {query}")
+        first_track_records = _save_metadata(
+            spotdl, query, first_track_file, episode_number=episode.number
+        )
+        try:
+            album = resolve_album_metadata(first_track_records, episode)
+        except ValueError as exc:
+            raise RuntimeError(f"Could not identify the correct Spotify release: {exc}") from exc
+
+        album_file = work_dir / "album.spotdl"
+        print(f"Resolved release: {album['album_name']}")
+        print(f"Spotify album: {album['album_url']}")
+        album_records = _save_metadata(
+            spotdl, album["album_url"], album_file, episode_number=episode.number
+        )
+        try:
+            expected_count = validate_album_metadata(album_records, album)
+        except ValueError as exc:
+            raise RuntimeError(f"Spotify album metadata validation failed: {exc}") from exc
+
         output_template = "{album}/{track-number} - {title}.{output-ext}"
         command = [
-            *spotdl, "download", query,
+            *spotdl, "download", album["album_url"],
             "--format", "mp3",
             "--bitrate", "192k",
             "--output", output_template,
         ]
-        print(f"Searching for: {query}")
+        print(f"Downloading {expected_count} tracks from the resolved album...")
         result = subprocess.run(command, cwd=work_dir, check=False)
         if result.returncode != 0:
             raise RuntimeError(
-                f"spotDL failed for episode {episode.number} (exit code {result.returncode})."
+                f"spotDL download failed for episode {episode.number} "
+                f"(exit code {result.returncode})."
             )
 
         tracks = ordered_tracks(list(work_dir.rglob("*.mp3")))
@@ -71,9 +124,16 @@ def download_episode(
         if len(album_dirs) != 1:
             found = ", ".join(sorted(path.name for path in album_dirs)) or "none"
             raise RuntimeError(
-                "The search did not resolve to exactly one album folder. "
+                "The download did not produce exactly one album folder. "
                 f"Found: {found}. No combined file was created."
             )
+        if len(tracks) != expected_count:
+            raise RuntimeError(
+                f"Incomplete album download: Spotify lists {expected_count} tracks, "
+                f"but spotDL downloaded {len(tracks)} MP3 files. "
+                "No combined file was created."
+            )
+
         album_name = next(iter(album_dirs)).name
         print(f"Found release: {album_name}")
         print(f"Tracks ({len(tracks)}):")
