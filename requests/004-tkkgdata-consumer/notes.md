@@ -1,17 +1,41 @@
 # Notes: Request 004
 
 ## Planning findings
-- TKKGDownloader currently retrieves episode metadata from TKKGTracker.
-- The downloader resolves Spotify album metadata with spotDL and validates track numbering dynamically.
-- Episode 150 returned 40 Spotify track records even though Spotify's summary count was inconsistent. The actual returned records must remain authoritative.
-- The current spotDL text-based YouTube matching failed for many episode 150 tracks despite the user providing the official YouTube Music playlist.
-- TKKGtracker request 009 and draft PR #14 explored storing both playlist and individual YouTube Music song URLs. This discovery belongs in TKKGData.
-- The downloader should consume exact verified mappings and keep all downloading and merging local.
+- The previous downloader read episode numbers and titles from TKKGTracker and resolved Spotify metadata independently with spotDL.
+- Episode 150 previously yielded 40 actual Spotify track records despite an inconsistent summary count. The new downloader must use the complete verified cross-provider track mapping.
+- TKKGData now owns episode metadata, source scraping, Spotify and YouTube Music discovery, verification, schema, and publication.
+- TKKGData Request 002 adds the exact Spotify track URL and ID to each individually verified YouTube Music song record.
+- spotDL 4.5.2 supports pairing a YouTube Music album URL with a Spotify album URL, and a YouTube watch URL with its corresponding Spotify track URL.
 
 ## Implementation status
-Planning only. No downloader code, dependency, CLI, or download behaviour has been changed by this request.
+
+Implemented on this request branch:
+- Replaced the TKKGTracker endpoint with TKKGData episode JSON and dataset metadata endpoints.
+- Added schema major version, metadata count, record structure, duplicate number, numbering gap, title, and required array validation.
+- Extended the Episode model to carry optional audio_release metadata.
+- Added strict verification of Spotify album and track IDs against their URLs.
+- Added strict verification of YouTube Music playlist and song IDs against their URLs.
+- Added cross-provider track count and contiguous order validation.
+- Implemented playlist and Spotify album pairing as the preferred download path.
+- Implemented exact individual YouTube Music song and Spotify track URL pairs as fallback, including fallback after playlist download failure.
+- Removed the independent Spotify resolver and all runtime text discovery.
+- Added automated tests for data loading, schema compatibility, source selection, invalid mappings, playlist fallback, and download completeness.
+- Preserved CLI syntax, range handling, output naming, overwrite protection, progress messages, FFmpeg merge, and local file behaviour.
+- Updated README, project instructions, knowledge base, and approved decisions.
+- Added GitHub Actions tests and a live TKKGData contract smoke test.
 
 ## Test results
-- GitHub Actions run 42695984257 completed successfully for draft PR #4.
-- Project installation and the full unit test command passed.
-- These are existing unit tests only. No real download, merge, or Windows playback test was run as part of this documentation request.
+
+GitHub Actions run 42699939555 passed:
+- All 28 Python unit tests passed.
+- The tests mock network and subprocess calls and do not download real audio.
+
+GitHub Actions run 42699797937 also passed the project install, compileall, and 27 unit tests before the additional playlist type regression test was added.
+
+The live TKKGData smoke test is being added to CI and will be recorded when its workflow completes.
+
+## Remaining verification
+
+- No real audio download or FFmpeg merge was run in CI.
+- TKKGData currently has no verified audio_release record in its initial catalogue snapshot. Episode 150 must first pass live audio enrichment and be written to TKKGData before the downloader can produce it.
+- Windows manual tests for episode 150, a different track count, range processing, playback, and overwrite protection remain pending.
