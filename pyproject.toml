@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tkkgdownloader"
+version = "0.1.0"
+description = "Create one MP3 file per TKKG audio drama episode."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Oliver Zsuffa" }]
+
+[project.scripts]
+tkkg = "tkkgdownloader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
