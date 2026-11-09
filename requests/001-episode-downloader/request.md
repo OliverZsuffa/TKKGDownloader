@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete on `feature/001-episode-downloader`. Verification pending.
+Implemented and merged into `main`. Automated tests pass. Real Windows integration verification is pending.
 
 ## Objective
 
@@ -32,6 +32,8 @@ python tkkg.py 125
 - [x] Protect existing output files unless `--overwrite` is passed.
 - [x] Add automated tests for core parsing, metadata, query construction, and track ordering.
 - [x] Document Windows installation and usage.
+- [x] Pass GitHub Actions unit tests.
+- [x] Merge the implementation into `main`.
 
 ## Important limitation
 
@@ -39,7 +41,6 @@ spotDL uses Spotify metadata and searches YouTube for matching audio. It does no
 
 ## Remaining acceptance checks
 
-- [ ] Confirm automated tests pass in GitHub Actions.
 - [ ] Test a real single episode with the user's Windows installation.
 - [ ] Confirm the selected release and track order are correct.
 - [ ] Confirm the merged MP3 plays correctly.
