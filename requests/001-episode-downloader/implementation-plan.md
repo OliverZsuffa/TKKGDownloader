@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feature/001-episode-downloader`. Automated and real environment verification are pending.
+Implemented, automated tests passed, and merged into `main`. Real Windows integration verification remains pending.
 
 ## Implemented structure
 
@@ -46,9 +46,9 @@ pyproject.toml
 
 ## Automated tests
 
-The unit test suite covers episode argument parsing, catalog parsing and lookup, search query construction, track ordering, malformed track names, and duplicate track numbers.
+The GitHub Actions unit test job passed on the final feature branch commit.
 
-Run with:
+Run locally with:
 
 ```powershell
 py -m unittest discover -s tests -v
@@ -56,12 +56,8 @@ py -m unittest discover -s tests -v
 
 ## Manual verification still required
 
-1. Install the project and verify `python tkkg.py --help`.
+1. Run `python tkkg.py --help`.
 2. Download one known episode and inspect the album name and track list.
 3. Confirm the merged MP3 plays correctly and preserves the track order.
 4. Run a short range and verify one output file per episode.
 5. Verify overwrite protection and the `--overwrite` option.
-
-## Approval and integration
-
-The user approved implementation. The feature branch is not merged into `main`. Merge only after tests and manual verification, with the user's approval.
