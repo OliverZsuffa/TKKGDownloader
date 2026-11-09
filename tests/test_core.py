@@ -1,6 +1,8 @@
 import argparse
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+import subprocess
 
 from tkkgdownloader.cli import parse_episode_spec
 from tkkgdownloader.episodes import Episode, get_episode, parse_catalog
@@ -10,6 +12,7 @@ from tkkgdownloader.spotify import (
     resolve_album_metadata,
     validate_album_metadata,
 )
+from tkkgdownloader.downloader import _run_with_progress
 
 
 class EpisodeParsingTests(unittest.TestCase):
@@ -50,7 +53,7 @@ class SpotifyResolutionTests(unittest.TestCase):
             "artist": "TKKG",
             "album_name": "150/Heiße Nächte im Dezember",
             "album_id": "0ZqyFeMXxCyIJvYptGlnn1",
-            "tracks_count": 3,
+            "tracks_count": 25,
         }
 
     def test_query_targets_first_chapter(self):
@@ -59,14 +62,14 @@ class SpotifyResolutionTests(unittest.TestCase):
             "TKKG 150 Heiße Nächte im Dezember Teil 01",
         )
 
-    def test_resolve_album_from_first_track(self):
+    def test_resolve_album_from_first_track_ignores_inconsistent_spotify_count(self):
         album = resolve_album_metadata([self.track], self.episode)
         self.assertEqual(album["album_id"], "0ZqyFeMXxCyIJvYptGlnn1")
         self.assertEqual(
             album["album_url"],
             "https://open.spotify.com/album/0ZqyFeMXxCyIJvYptGlnn1",
         )
-        self.assertEqual(album["tracks_count"], 3)
+        self.assertNotIn("tracks_count", album)
 
     def test_reject_empty_or_multiple_results(self):
         for payload in ([], [self.track, self.track]):
@@ -91,34 +94,72 @@ class SpotifyResolutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "album ID"):
             resolve_album_metadata([track], self.episode)
 
-    def test_validate_album_track_count_and_album_identity(self):
+    def test_album_count_is_derived_from_all_returned_songs(self):
         album = resolve_album_metadata([self.track], self.episode)
         records = [
             {"album_id": album["album_id"], "track_number": n}
-            for n in (3, 1, 2)
+            for n in range(1, 41)
         ]
-        self.assertEqual(validate_album_metadata(records, album), 3)
-        with self.assertRaisesRegex(ValueError, "incomplete"):
-            validate_album_metadata(records[:2], album)
+        self.assertEqual(validate_album_metadata(records, album), 40)
+
+    def test_album_metadata_must_be_a_complete_track_sequence(self):
+        album = resolve_album_metadata([self.track], self.episode)
+        complete = [
+            {"album_id": album["album_id"], "track_number": n}
+            for n in range(1, 5)
+        ]
+        self.assertEqual(validate_album_metadata(complete, album), 4)
+        with self.assertRaisesRegex(ValueError, "complete track sequence"):
+            validate_album_metadata(complete[:2] + complete[3:], album)
+
+    def test_wrong_album_and_duplicate_track_numbers_rejected(self):
+        album = resolve_album_metadata([self.track], self.episode)
         with self.assertRaisesRegex(ValueError, "different album"):
             validate_album_metadata(
-                [*records[:2], {"album_id": "another-album", "track_number": 3}],
+                [
+                    {"album_id": album["album_id"], "track_number": 1},
+                    {"album_id": "another-album", "track_number": 2},
+                ],
+                album,
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            validate_album_metadata(
+                [
+                    {"album_id": album["album_id"], "track_number": 1},
+                    {"album_id": album["album_id"], "track_number": 1},
+                ],
                 album,
             )
 
-    def test_duplicate_album_track_numbers_rejected(self):
-        album = resolve_album_metadata([self.track], self.episode)
-        records = [
-            {"album_id": album["album_id"], "track_number": n}
-            for n in (1, 1, 3)
-        ]
-        with self.assertRaisesRegex(ValueError, "duplicate"):
-            validate_album_metadata(records, album)
 
-    def test_list_length_is_not_used_as_track_count(self):
-        track = {**self.track, "list_length": 40}
-        album = resolve_album_metadata([track], self.episode)
-        self.assertEqual(album["tracks_count"], 3)
+class ProgressRunnerTests(unittest.TestCase):
+    @patch("tkkgdownloader.downloader.time.monotonic", side_effect=[0, 11, 12])
+    @patch("tkkgdownloader.downloader.subprocess.Popen")
+    def test_reports_heartbeat_and_completion(self, popen, monotonic):
+        process = Mock()
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["example"], 10),
+            0,
+        ]
+        popen.return_value = process
+        with patch("builtins.print") as output:
+            result = _run_with_progress(
+                ["example"], stage="Test stage", heartbeat_seconds=10
+            )
+        self.assertEqual(result, 0)
+        self.assertGreaterEqual(output.call_count, 3)
+        self.assertTrue(any("still running" in str(c.args[0]) for c in output.call_args_list))
+
+    @patch("tkkgdownloader.downloader.time.monotonic", side_effect=[0, 2])
+    @patch("tkkgdownloader.downloader.subprocess.Popen")
+    def test_returns_nonzero_exit_code(self, popen, monotonic):
+        process = Mock()
+        process.wait.return_value = 2
+        popen.return_value = process
+        self.assertEqual(
+            _run_with_progress(["example"], stage="Test stage"),
+            2,
+        )
 
 
 class TrackOrderingTests(unittest.TestCase):
