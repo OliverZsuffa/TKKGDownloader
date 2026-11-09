@@ -40,4 +40,4 @@ Existing final files are skipped by default. The user must pass `--overwrite` to
 
 ## Validation status
 
-Automated and real-world verification of the follow-up album resolution flow is pending until CI and manual Windows testing are complete.
+The new album resolution flow passed its automated unit tests in GitHub Actions run #15 and was merged in pull request #2. Real Windows integration and playback testing remain outstanding.
