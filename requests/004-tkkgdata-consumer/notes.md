@@ -12,4 +12,6 @@
 Planning only. No downloader code, dependency, CLI, or download behaviour has been changed by this request.
 
 ## Test results
-No tests have been run. Implementation depends on an approved and published TKKGData contract and a focused compatibility test of spotDL's playlist and individual-track URL support.
+- GitHub Actions run 42695984257 completed successfully for draft PR #4.
+- Project installation and the full unit test command passed.
+- These are existing unit tests only. No real download, merge, or Windows playback test was run as part of this documentation request.
