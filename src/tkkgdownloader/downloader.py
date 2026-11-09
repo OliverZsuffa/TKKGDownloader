@@ -196,11 +196,6 @@ def download_episode(
                 print("Cancelled. No combined MP3 was created.", flush=True)
                 return None
 
-        _run_with_progress(
-            [ffmpeg, "-version"],
-            stage="Checking FFmpeg",
-            heartbeat_seconds=10,
-        )
         print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
         merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
     print(f"Done: {final_path}", flush=True)
