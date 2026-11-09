@@ -9,9 +9,9 @@ A Windows friendly command line tool that creates one MP3 file per TKKG audio dr
 - FFmpeg 4.2 or newer, available on PATH
 - Deno is recommended by spotDL for some YouTube downloads
 
-Install spotDL:
+Install the project and its pinned spotDL dependency:
 
-    py -m pip install --upgrade spotdl
+    py -m pip install -e .
 
 Check that both external tools are available:
 
