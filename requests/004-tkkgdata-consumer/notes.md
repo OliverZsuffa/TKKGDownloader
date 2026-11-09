@@ -39,13 +39,22 @@ GitHub Actions run 42700122396 passed:
 
 The spotDL 4.5.2 source was inspected directly to confirm the supported manual pairing formats: YouTube Music album URL with Spotify album URL, and YouTube watch URL with Spotify track URL. No real audio download was performed in CI.
 
-At the time of this note, the initial TKKGData catalogue contained no verified audio_release mapping. The yt-dlp playlist matching implementation has since been merged into TKKGData. The live episode 150 dry-run is now being run separately. The downloader correctly rejects an episode until TKKGData contains a complete verified mapping.
+TKKGData now publishes a verified audio_release mapping for episode 150. It contains 40 Spotify track records, the official YouTube Music playlist, and 40 ordered individual YouTube Music song URLs paired with exact Spotify track URLs. The downloader's live CI smoke test validates this complete mapping without downloading audio.
 
 ## Latest main branch verification
 
 - The CI consolidation was merged in pull request #5 as commit 55672e77de901c966f68d05e40b0ca68dc274a7e.
 - GitHub Actions run 42708792876 passed the consolidated Tests workflow on main. This includes project installation, compileall, the live TKKGData contract smoke test, and all unit tests.
 - Updated the project overview and technical decisions to remove obsolete descriptions of TKKGTracker as the data source and of independent Spotify discovery.
+
+## Latest live dataset verification
+
+GitHub Actions run 42711885293 passed on main after the episode 150 mapping was published. The smoke test:
+- Fetched 243 TKKGData episode records.
+- Validated episode 150's real audio_release with the production downloader validator.
+- Confirmed 40 contiguous individual Spotify and YouTube Music pairs.
+- Confirmed the exact official playlist URL and Spotify album pairing.
+- Confirmed 40 individual fallback queries can be constructed.
 
 ## Remaining verification
 
