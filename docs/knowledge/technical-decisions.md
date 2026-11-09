@@ -12,7 +12,7 @@ The first-track result must identify artist TKKG, match the requested episode an
 
 ## Validate album completeness
 
-Use Spotify's `tracks_count` field as the expected album size. Do not use `list_length`, which may represent a broader playlist context. Require the album metadata record count and downloaded MP3 count to match the expected track count. Reject duplicate track numbers.
+Derive the expected album size from all song records returned by spotDL's album metadata operation. Require track numbers to form a complete sequence from 1 through the record count, with no duplicates or invalid numbers. Require the downloaded MP3 count to match that validated count. Do not use Spotify's inconsistent `tracks_count` field as the expected size.
 
 ## Do not use TKKGTracker chapter entries as Spotify tracks
 
@@ -46,4 +46,4 @@ The new album resolution flow passed its automated unit tests in GitHub Actions 
 
 The album track count is derived from all song records returned by spotDL's album metadata operation, not Spotify's `tracks_count` field. Track numbers must form a complete sequence from 1 through the record count. spotDL subprocesses retain terminal output and are accompanied by flushed stage messages and elapsed-time heartbeat messages every 10 seconds.
 
-Request 003 was merged in pull request #3. Automated unit tests passed in GitHub Actions. Real Windows integration testing, including episode 150 download, merge, and playback, remains outstanding.
+Request 003 was merged in pull request #3. Automated unit tests passed in GitHub Actions. The first Windows integration test confirmed that episode 150 metadata resolves to 40 tracks and passes validation. The download stage then failed to find YouTube Music matches for many tracks, even though the user supplied the official YouTube Music album playlist. The user stopped the run before completion. End-to-end download, merge, and playback remain unverified. Investigate pairing the official YouTube Music album URL with the corresponding Spotify album URL for exact matching, rather than relying on text search.
