@@ -25,9 +25,29 @@ jobs:
         run: |
           python - <<'PY'
           from tkkgdownloader.episodes import fetch_catalog
+          from tkkgdownloader.audio_sources import (
+              build_individual_track_queries,
+              build_playlist_query,
+              validate_audio_release,
+          )
+
           catalog = fetch_catalog()
           assert 150 in catalog, "Episode 150 is missing from TKKGData"
-          print(f"Fetched {len(catalog)} TKKGData episodes. Episode 150: {catalog[150].title}")
+          episode = catalog[150]
+          plan = validate_audio_release(episode.audio_release)
+          assert plan["track_count"] == 40, "Episode 150 must expose all 40 verified tracks"
+          assert plan["youtube_music_playlist_url"] == (
+              "https://music.youtube.com/playlist?list="
+              "OLAK5uy_mQRbJNANh1H4CKbmM5ez5LSW1HJFvE3QI"
+          ), "Episode 150's verified YouTube Music playlist changed"
+          assert build_playlist_query(plan).endswith(
+              "|https://open.spotify.com/album/0ZqyFeMXxCyIJvYptGlnn1"
+          )
+          assert len(build_individual_track_queries(plan)) == 40
+          print(
+              f"Fetched {len(catalog)} TKKGData episodes. "
+              f"Episode 150 has {plan['track_count']} verified Spotify and YouTube Music pairs."
+          )
           PY
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
