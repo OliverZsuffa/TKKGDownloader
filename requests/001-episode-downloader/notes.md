@@ -1,34 +1,26 @@
 # Request 001 Notes
 
-## Implementation
+## Initial implementation
 
 - Implemented the Python CLI and direct `tkkg.py` entry point.
 - Added dynamic episode metadata retrieval from TKKGTracker.
-- Added spotDL album search using the episode number and official title.
-- Added MP3 output, track number sorting, release display, and confirmation.
+- Added spotDL album text search, MP3 output, track number sorting, release display, and confirmation.
 - Added FFmpeg merging with stream copy and re-encoding fallback.
 - Added range processing, overwrite protection, temporary file cleanup, and per episode error reporting.
 - Added unit tests and a GitHub Actions test workflow.
 - Added Windows installation and usage instructions.
 
-## Technical findings
+## Follow-up fix: Request 002
 
-- spotDL accepts album search queries using the `album:` prefix.
-- spotDL uses Spotify metadata to locate matching audio on YouTube. It does not download audio directly from Spotify.
-- FFmpeg is used both by spotDL and by the final merge stage.
+The initial album text search failed for episode 150. Testing showed that spotDL could resolve a direct Spotify track URL and a direct Spotify album URL, while album text search did not find the release.
+
+Request 002 replaces album text search with a generic first-track lookup. spotDL's metadata-only `save` operation resolves the first track, whose metadata supplies the Spotify album ID. The downloader then validates the album metadata and downloads by direct album URL.
+
+The new flow validates that the first track belongs to TKKG and matches the requested episode and `Teil 01`. It validates the album ID, album identity, Spotify track count, and downloaded MP3 count. It does not use `list_length` as the album track count.
 
 ## Verification status
 
-- GitHub Actions unit tests passed on the final feature branch commit.
-- Pull request #1 was merged into `main`.
-- Real spotDL and FFmpeg download and playback have not yet been tested in the user's Windows environment.
-- The first real test should use one episode before attempting a range.
-- Do not consider audio matching and final playback fully verified until that manual test succeeds.
-
-## Remaining work
-
-- Run `python tkkg.py 1` on Windows.
-- Inspect the selected release and track list.
-- Confirm the merged MP3 plays correctly and preserves the expected order.
-- Run a short episode range.
-- Address any integration issues found.
+- Initial GitHub Actions unit tests passed before the follow-up fix.
+- The user verified manually that spotDL 4.5.2 can resolve the episode 150 first-track Spotify URL and its direct album URL.
+- Request 002 automated tests and GitHub Actions: pending.
+- Real end-to-end Windows download, merge, and playback using the new flow: pending.
