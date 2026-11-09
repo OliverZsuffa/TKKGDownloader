@@ -1,49 +1,37 @@
 # Technical Decisions
 
-## Use episode metadata dynamically
+## 001. Use TKKGData as the only metadata source
 
-Episode titles and numbering are retrieved from the TKKGTracker dataset instead of being hardcoded.
+Episode identity and verified provider mappings are fetched from TKKGData. Validate the dataset metadata schema version, episode count, required record arrays, unique episode numbers, and contiguous numbering before using it.
 
-## Resolve albums through the first chapter track
+Do not query TKKGTracker or keep an independent authoritative episode catalogue.
 
-Album text search failed for episode 150. The downloader now searches for the episode's first chapter track using the episode number, official title, and `Teil 01`. spotDL's metadata-only `save` operation resolves that track and provides its Spotify album ID. The downloader then uses the direct album URL.
+## 002. Do not perform source discovery in the downloader
 
-The first-track result must identify artist TKKG, match the requested episode and first part, and contain a valid album ID. The album metadata must refer to the same album. The expected track count is derived dynamically from the complete set of song records returned by spotDL's album metadata save operation. The returned track numbers must form a complete sequence from 1 through the number of records, with no duplicates or invalid numbers. Do not rely on Spotify's inconsistent `tracks_count` field. The downloaded MP3 count must match this validated record count.
+TKKGData owns scraping, Spotify resolution, YouTube Music matching, source verification, provenance, and publication. The downloader only consumes verified identifiers and URLs. It must never use text search as a fallback or write corrections back to TKKGData.
 
-## Validate album completeness
+## 003. Prefer verified playlist pairing
 
-Derive the expected album size from all song records returned by spotDL's album metadata operation. Require track numbers to form a complete sequence from 1 through the record count, with no duplicates or invalid numbers. Require the downloaded MP3 count to match that validated count. Do not use Spotify's inconsistent `tracks_count` field as the expected size.
+Use the verified YouTube Music album playlist URL paired with the Spotify album URL when available. spotDL 4.5.2 supports this explicit pairing format.
 
-## Do not use TKKGTracker chapter entries as Spotify tracks
+If the playlist is missing or its download fails, use each verified YouTube Music song URL paired with its exact Spotify track URL. Do not infer a pairing from similar titles.
 
-The dataset's `tracks` field is not a reliable representation of Spotify's release track list. Spotify release metadata determines which tracks are downloaded and merged.
+## 004. Validate track integrity from the shared mapping
 
-## Produce one output file per episode
+The Spotify track count, YouTube Music track count, matched count, and actual list length must agree. Track numbers must be contiguous and ordered. Validate each provider ID against its corresponding URL.
 
-A requested range creates separate MP3 files, one for each episode, rather than combining multiple episodes into one file.
+After downloading, require the MP3 count and track numbering to match the validated mapping. Require exactly one album folder. Never create a combined file from an incomplete or ambiguous download.
 
-## Use spotDL for metadata resolution and audio matching
+## 005. Preserve the command line contract
 
-spotDL uses Spotify metadata and searches YouTube for matching audio. It does not download audio directly from Spotify. This distinction must be clear in user documentation.
+Keep commands such as `py tkkg.py 150` and `py tkkg.py 1-10`. Preserve range handling, output naming, overwrite protection, per episode failure reporting, FFmpeg merging, and temporary file cleanup.
 
-## Confirm the selected release
+## 006. Keep downloads local
 
-The application displays the selected album folder and its downloaded tracks before creating the final merged MP3. The user can inspect the list or use `--yes` to accept it without a prompt.
+Downloaded audio and temporary files stay outside version control. The downloader never uploads audio or user data to TKKGData.
 
-## Merge conservatively
+## Verification status
 
-FFmpeg first attempts stream copy. If the MP3 streams are not compatible for direct concatenation, it retries with a 192 kbps MP3 re-encode.
+The TKKGData consumer migration and downloader CI consolidation are merged. The latest main branch workflow passed project installation, Python compilation, the live TKKGData contract smoke test, and the unit test suite.
 
-## Protect existing outputs
-
-Existing final files are skipped by default. The user must pass `--overwrite` to replace them.
-
-## Validation status
-
-The new album resolution flow passed its automated unit tests in GitHub Actions run #15 and was merged in pull request #2. Real Windows integration and playback testing remain outstanding.
-
-## Album count and progress feedback
-
-The album track count is derived from all song records returned by spotDL's album metadata operation, not Spotify's `tracks_count` field. Track numbers must form a complete sequence from 1 through the record count. spotDL subprocesses retain terminal output and are accompanied by flushed stage messages and elapsed-time heartbeat messages every 10 seconds.
-
-Request 003 was merged in pull request #3. Automated unit tests passed in GitHub Actions. The first Windows integration test confirmed that episode 150 metadata resolves to 40 tracks and passes validation. The download stage then failed to find YouTube Music matches for many tracks, even though the user supplied the official YouTube Music album playlist. The user stopped the run before completion. End-to-end download, merge, and playback remain unverified. Investigate pairing the official YouTube Music album URL with the corresponding Spotify album URL for exact matching, rather than relying on text search.
+Real audio download, FFmpeg merge, and playback remain separate end to end checks. They should only be reported as passed after an actual download test.
