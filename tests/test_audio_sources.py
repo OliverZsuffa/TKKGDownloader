@@ -68,6 +68,15 @@ class AudioSourceTests(unittest.TestCase):
         self.assertIsNone(build_playlist_query(plan))
         self.assertEqual(len(build_individual_track_queries(plan)), 2)
 
+    def test_generic_youtube_playlist_uses_individual_pairs_with_spotify_album(self):
+        release = make_audio_release()
+        playlist_id = "PL12345678901234567890"
+        release["youtube_music"]["playlist"]["playlist_id"] = playlist_id
+        release["youtube_music"]["playlist"]["url"] = f"https://music.youtube.com/playlist?list={playlist_id}"
+        plan = validate_audio_release(release)
+        self.assertIsNone(build_playlist_query(plan))
+        self.assertEqual(len(build_individual_track_queries(plan)), 2)
+
     def test_unverified_release_is_rejected(self):
         release = make_audio_release()
         release["verification"]["status"] = "candidate"
