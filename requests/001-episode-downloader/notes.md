@@ -22,5 +22,6 @@ The new flow validates that the first track belongs to TKKG and matches the requ
 
 - Initial GitHub Actions unit tests passed before the follow-up fix.
 - The user verified manually that spotDL 4.5.2 can resolve the episode 150 first-track Spotify URL and its direct album URL.
-- Request 002 automated tests and GitHub Actions: pending.
-- Real end-to-end Windows download, merge, and playback using the new flow: pending.
+- Request 002 automated unit tests passed in GitHub Actions run #15.
+- Pull request #2 was merged into `main`.
+- Real end-to-end Windows download, merge, and playback using the new flow remain pending.
