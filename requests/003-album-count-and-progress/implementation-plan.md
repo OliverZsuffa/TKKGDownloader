@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Awaiting user approval before implementation.
+Approved by the user. Implementation in progress.
 
 ## Problem
 
@@ -17,7 +17,8 @@ The current implementation also provides too little feedback during slow spotDL 
 ### 1. Correct album metadata validation
 
 - Stop using the first track's `tracks_count` as the expected number of album tracks.
-- Treat the number of valid records returned by spotDL's album metadata save operation as the expected track count.
+- Use every song record returned by spotDL's album metadata save operation. The number of valid records is the expected track count, with no hardcoded episode count or reliance on Spotify's inconsistent `tracks_count` field.
+- Validate that the returned track numbers form the complete sequence from 1 through the number of returned records. For episode 150, spotDL returns parts 1 through 40, so the expected count is derived as 40.
 - Continue validating that every record belongs to the resolved Spotify album.
 - Continue validating track numbers and rejecting duplicate or invalid numbering.
 - Return the validated metadata record count from the validator.
@@ -43,7 +44,8 @@ The current implementation also provides too little feedback during slow spotDL 
 ### 3. Tests
 
 - Add a regression test where the first-track metadata reports `tracks_count: 25` but the album metadata contains 40 valid records. Validation must accept all 40.
-- Verify the validator returns 40 and the download completeness check expects 40.
+- Verify a fixture with 40 records numbered 1 through 40 is accepted and returns 40, while no literal 40 is embedded in production logic.
+- Verify missing sequence numbers are rejected.
 - Keep rejection tests for empty metadata, wrong album IDs, invalid track numbers, and duplicate track numbers.
 - Add tests for the progress runner where practical, including successful completion and non-zero exit status.
 - Run the complete automated test suite and GitHub Actions.
