@@ -56,6 +56,8 @@ GitHub Actions run 42711885293 passed on main after the episode 150 mapping was 
 - Confirmed the exact official playlist URL and Spotify album pairing.
 - Confirmed 40 individual fallback queries can be constructed.
 
+The subsequent TKKGData catalogue refresh 42712073809 preserved the full mapping. A final CI run is being triggered against that refreshed dataset.
+
 ## Remaining verification
 
 - No real audio download or FFmpeg merge was run in CI.
