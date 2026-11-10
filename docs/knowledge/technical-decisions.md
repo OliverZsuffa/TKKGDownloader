@@ -56,3 +56,16 @@ Automated tests cover the data contract, CLI selection, safe ZIP import, filenam
 Normal console output shows only meaningful stage transitions, a single progress line, and the final MP3 path. Browser and DOM diagnostics, raw modal text, selector details, temporary paths, and tracebacks belong in a persistent per-run log outside the temporary download workspace. The log filename includes the episode number and a timestamp. Create it before launching Chromium and close it on success, failure, or cancellation.
 
 Use cyan for informational stages and ETA, yellow for queue waits and retries, green for successful stages and completed progress, red for errors, and grey for remaining progress. Colour is supplementary and must not carry meaning by itself. Disable ANSI colour for non-interactive output, terminals marked as dumb, and when NO_COLOR is set. In interactive terminals update one progress line in place. In non-interactive output, emit concise progress no more often than the existing 15-second heartbeat. Show the track count only when the site actually supplies it, and clear missing or invalid ETA values rather than retaining stale estimates. Never derive an ETA from elapsed time.
+
+
+## 010. Keep quality diagnostics opt-in and preserve all source evidence
+
+The normal downloader and its default merge behaviour remain unchanged. The optional `--diagnostic-dir` mode is available only with the Spotisaver provider and one episode per invocation. It requires a new or empty directory and never replaces the normal final episode MP3.
+
+Keep the original Spotisaver ZIP, extracted raw files, canonical numbered tracks, and the path to the persistent browser diagnostic log. Inspect every source with FFprobe, a full FFmpeg decode, silence detection, RMS and peak analysis. A failed source probe or decode stops candidate generation but still produces a failure report and preserves all downloaded evidence.
+
+Generate two independent MP3 candidates. Candidate A uses the existing merger and records whether stream copy or its existing 192 kbit/s fallback was selected. Candidate B decodes each source to 24-bit PCM, concatenates the tracks in canonical order, retains the lossless WAV master, and encodes once at 320 kbit/s. Use the common source sample rate and channel count when all tracks agree. Otherwise preserve the highest source sample rate and channel count to avoid downsampling or downmixing. Fully decode and probe the candidates and PCM master.
+
+Inspect embedded ID3 attached pictures across the source parts. Preserve distinct cover images and their source details. Embed the selected source image in the PCM-derived MP3. Populate metadata from TKKGData and consistent source tags only, then read back and verify every populated ID3 field and the artwork. Never invent missing values.
+
+Create a lossless review excerpt around every track boundary and record its timestamp, silence, RMS, and peak metrics. Reports must distinguish source validation failures from candidate validation results. Keep all intermediate files until the user has reviewed the recording. The real episode workflow runs locally because it involves a long browser download and media processing. CI runs synthetic fixtures only.
