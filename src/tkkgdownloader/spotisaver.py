@@ -147,8 +147,7 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
     return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
 
-def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:
-    """Render a compact pip-style progress line from the current modal snapshot."""
+def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:    """Render a compact pip-style progress line from the current modal snapshot."""
     progress = _parse_track_progress(snapshot)
     if progress is None:
         return None
@@ -195,41 +194,79 @@ class _ProgressReporter:
 
 
 def _find_zip_download_button(page: Any) -> Any | None:
-    """Find one visible, enabled Download ZIP button inside the active modal."""
+    """Find the unique visible Download ZIP link or button inside the active modal."""
     modal = page.locator(".modal.show")
     if not modal.count() or not modal.first.is_visible():
         return None
 
+    # Spotisaver currently renders the final action as an anchor inside
+    # .zip-ready-card, not as a button. Prefer its accessible link semantics.
     try:
-        buttons = modal.first.get_by_role("button", name=re.compile(r"^\s*Download ZIP\s*$", re.I))
-        count = buttons.count()
-        if count == 1:
-            candidate = buttons.first
-            return candidate if candidate.is_visible() and candidate.is_enabled() else None
+        links = modal.first.get_by_role("link", name=re.compile(r"^\\s*Download ZIP\\s*$", re.I))
+        count = links.count()
         if count > 1:
-            raise RuntimeError(f"Found {count} matching Download ZIP buttons in the active modal.")
+            raise RuntimeError(f"Found {count} matching Download ZIP links in the active modal.")
+        if count == 1:
+            candidate = links.first
+            href = candidate.get_attribute("href")
+            disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
+            if candidate.is_visible() and href and not disabled:
+                return candidate
+            return None
     except RuntimeError:
         raise
     except Exception:
         pass
 
-    # Accessible-name lookup can miss sites whose visible label is assembled
-    # from nested spans. Fall back to exact rendered button text in this modal.
+    # Fall back to the exact class observed in the supplied ready-card markup.
+    links = modal.first.locator(".zip-ready-card a.zrc-cta")
+    matches = []
+    for index in range(links.count()):
+        candidate = links.nth(index)
+        try:
+            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            href = candidate.get_attribute("href")
+            disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
+            if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
+                matches.append(candidate)
+        except Exception:
+            continue
+    if len(matches) > 1:
+        raise RuntimeError(f"Found {len(matches)} matching Download ZIP links in the active modal.")
+    if len(matches) == 1:
+        candidate = matches[0]
+        return candidate if candidate.is_visible() else None
+
+    # Retain compatibility with a site version that renders a real button.
+    try:
+        buttons = modal.first.get_by_role("button", name=re.compile(r"^\\s*Download ZIP\\s*$", re.I))
+        count = buttons.count()
+        if count > 1:
+            raise RuntimeError(f"Found {count} matching Download ZIP buttons in the active modal.")
+        if count == 1:
+            candidate = buttons.first
+            return candidate if candidate.is_visible() and candidate.is_enabled() else None
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
     buttons = modal.first.locator("button")
     matches = []
     for index in range(buttons.count()):
         candidate = buttons.nth(index)
         try:
-            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
             if re.fullmatch(r"Download ZIP", label, re.I):
                 matches.append(candidate)
         except Exception:
             continue
-    if len(matches) != 1:
+    if len(matches) > 1:
+        raise RuntimeError(f"Found {len(matches)} matching Download ZIP buttons in the active modal.")
+    if not matches:
         return None
     candidate = matches[0]
     return candidate if candidate.is_visible() and candidate.is_enabled() else None
-
 
 def _queue_retry_seconds(snapshot: dict[str, str]) -> int | None:
     """Extract a retry delay stated in the visible queue notice."""
@@ -297,8 +334,7 @@ def _download_click(
         "Click call returned successfully. Monitoring Spotisaver's queue and waiting "
         "without a fixed download-event timeout.",
         started,
-    )
-    while not download_events:
+    )    while not download_events:
         if page.is_closed():
             raise RuntimeError(
                 "Spotisaver page closed before a browser download event arrived. "
@@ -447,8 +483,7 @@ def _download_click(
                 raise
             if zip_button is None:
                 _log("ZIP archive is ready, but no unique visible enabled 'Download ZIP' button was found.", started)
-                _log(f"Last modal snapshot: {snapshot!r}", started)
-                try:
+                _log(f"Last modal snapshot: {snapshot!r}", started)                try:
                     _log_visible_download_controls(page)
                 except Exception as diagnostic_error:
                     _log(f"Could not inventory visible controls: {diagnostic_error}", started)
@@ -597,8 +632,7 @@ def _log_visible_download_controls(page: Any) -> None:
 
 
 def _find_track_download(page: Any, title: str) -> Any | None:
-    text_locator = page.get_by_text(title, exact=True).first
-    if not text_locator.count():
+    text_locator = page.get_by_text(title, exact=True).first    if not text_locator.count():
         text_locator = page.get_by_text(title, exact=False).first
     if not text_locator.count():
         return None
@@ -747,8 +781,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
         _log(f"FAILED during {stage}: {type(exc).__name__}: {exc}", workflow_started)
         traceback.print_exc()
         raise
-    except Exception as exc:
-        message = str(exc)
+    except Exception as exc:        message = str(exc)
         _log(
             f"FAILED during {stage}: {type(exc).__name__}: {message}",
             workflow_started,
