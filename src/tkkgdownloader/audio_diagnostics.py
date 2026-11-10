@@ -196,14 +196,14 @@ def _write_metadata(mp3: Path, episode: Any, plan: dict[str, Any], tracks: list[
 
 def _volume_metrics(path: Path, ffmpeg: str, *, silence_seconds: int = 5) -> dict[str, Any]:
     volume = _run([
-        ffmpeg, "-hide_banner", "-i", str(path),
+        ffmpeg, "-hide_banner", "-i", str(path), "-map", "0:a:0", "-vn",
         "-af", "astats=metadata=0:reset=0", "-f", "null", "-"
     ])
     import re
     rms = re.search(r"RMS level dB:\s*(-?[0-9.]+)", volume["stderr"])
     peak = re.search(r"Peak level dB:\s*(-?[0-9.]+)", volume["stderr"])
     silence = _run([
-        ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
+        ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0", "-vn",
         "-af", f"silencedetect=noise=-60dB:d={silence_seconds}", "-f", "null", "-"
     ])
     return {
