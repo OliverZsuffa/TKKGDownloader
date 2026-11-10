@@ -612,7 +612,6 @@ def _download_click(
         page.wait_for_timeout(1_000)
 
     progress_reporter.finish()
-    report_stage("Archive downloaded. Validating tracks...", "info")
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
     suggested = Path(download.suggested_filename).name
@@ -873,7 +872,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
             f"{time.monotonic() - workflow_started:.1f}s: {exc}",
             workflow_started,
         )
-        traceback.print_exc()
+        _log(traceback.format_exc())
         raise RuntimeError(
             f"Spotisaver timed out during {stage} after "
             f"{time.monotonic() - workflow_started:.1f}s: {exc}"
@@ -933,9 +932,9 @@ def download_and_import(
         if logger is not None:
             logger.exception("Spotisaver run failed")
         if log_path is not None:
-            report_stage(f"Download failed: {exc}. Diagnostics: {log_path}", "error")
+            report_stage(f"Download failed: {type(exc).__name__}. Diagnostics: {log_path}", "error")
         else:
-            report_stage(f"Download failed: {exc}", "error")
+            report_stage(f"Download failed: {type(exc).__name__}.", "error")
         raise
     finally:
         finish_console_output()
