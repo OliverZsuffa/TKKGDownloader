@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by Oliver on 2026-11-10. Implementation in progress.
+Approved by Oliver on 2026-11-10. Implemented on `implement/spotisaver-zip-button-progress`; GitHub Actions passed. Live Spotisaver verification remains pending.
 
 ## Objective
 
