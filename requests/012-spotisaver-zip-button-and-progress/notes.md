@@ -27,3 +27,8 @@ Not implemented. This request and its implementation plan are awaiting Oliver's 
 ## Verification status
 
 No code or tests have been changed for this request. The exact final ZIP button markup remains to be captured only if visible role/name discovery proves insufficient during implementation or local testing.
+
+
+## Output refinement
+
+Oliver requested a real terminal progress bar similar to pip, not repeated textual progress updates. The implementation plan now specifies an in-place updating bar showing completed/total tracks, percentage, and ETA. It must finish cleanly before stage messages, and non-interactive output should use concise periodic lines.
