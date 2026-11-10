@@ -147,7 +147,8 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
     return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
 
-def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:    """Render a compact pip-style progress line from the current modal snapshot."""
+def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:
+    """Render a compact pip-style progress line from the current modal snapshot."""
     progress = _parse_track_progress(snapshot)
     if progress is None:
         return None
@@ -334,7 +335,8 @@ def _download_click(
         "Click call returned successfully. Monitoring Spotisaver's queue and waiting "
         "without a fixed download-event timeout.",
         started,
-    )    while not download_events:
+    )
+    while not download_events:
         if page.is_closed():
             raise RuntimeError(
                 "Spotisaver page closed before a browser download event arrived. "
@@ -483,7 +485,8 @@ def _download_click(
                 raise
             if zip_button is None:
                 _log("ZIP archive is ready, but no unique visible enabled 'Download ZIP' button was found.", started)
-                _log(f"Last modal snapshot: {snapshot!r}", started)                try:
+                _log(f"Last modal snapshot: {snapshot!r}", started)
+                try:
                     _log_visible_download_controls(page)
                 except Exception as diagnostic_error:
                     _log(f"Could not inventory visible controls: {diagnostic_error}", started)
@@ -632,7 +635,8 @@ def _log_visible_download_controls(page: Any) -> None:
 
 
 def _find_track_download(page: Any, title: str) -> Any | None:
-    text_locator = page.get_by_text(title, exact=True).first    if not text_locator.count():
+    text_locator = page.get_by_text(title, exact=True).first
+    if not text_locator.count():
         text_locator = page.get_by_text(title, exact=False).first
     if not text_locator.count():
         return None
@@ -781,7 +785,8 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
         _log(f"FAILED during {stage}: {type(exc).__name__}: {exc}", workflow_started)
         traceback.print_exc()
         raise
-    except Exception as exc:        message = str(exc)
+    except Exception as exc:
+        message = str(exc)
         _log(
             f"FAILED during {stage}: {type(exc).__name__}: {message}",
             workflow_started,
