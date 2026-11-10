@@ -486,10 +486,13 @@ def run_episode_diagnostics(
     boundaries = _make_boundaries(tracks, durations, ffmpeg, review, sample_rate, channel_count)
 
     expected_duration = sum(durations)
+    log_path_file = workspace / "source" / "spotisaver-log-path.txt"
+    spotisaver_log = log_path_file.read_text(encoding="utf-8").strip() if log_path_file.is_file() else None
     comparison = {
         "episode": {"number": episode.number, "title": episode.title},
         "track_count": len(tracks),
         "tool_versions": versions,
+        "spotisaver_log": spotisaver_log,
         "source_formats": [
             {"sample_rate": rate, "channels": count} for rate, count in source_formats
         ],
@@ -542,6 +545,7 @@ def run_episode_diagnostics(
         f'Artwork: {"embedded and verified" if artwork["artwork_found"] else "not present in source parts"}',
         f'Metadata: {"verified" if metadata["verified"] else "not verified"}',
         f'Boundary review: {len(boundaries)} transitions',
+        f'Spotisaver log: {spotisaver_log or "not available"}',
         f'Report: {report_path}',
     ]
     (reports / "summary.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
