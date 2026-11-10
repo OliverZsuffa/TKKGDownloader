@@ -6,7 +6,7 @@ from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
-from mutagen.id3 import ID3, TIT2, TRCK
+from mutagen.id3 import ID3, TALB, TIT2, TRCK
 
 from tkkgdownloader.audio_import import (
     import_audio_files,
@@ -191,6 +191,73 @@ class TrackIdentityTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RuntimeError, "manifest-defined track order"):
                 validate_track_manifest(list(reversed(result)), manifest)
+
+
+    def test_spotisaver_provider_wrappers_are_removed_exactly(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = make_archive(root, [
+                ("TKKG - 150 - Heiße Nächte im Dezember - Teil 01 (SPOTISAVER).mp3", b"one"),
+                ("TKKG - 150 - Heiße Nächte im Dezember - Teil 10 (SPOTISAVER).mp3", b"ten"),
+            ])
+            result = import_audio_files(
+                [archive],
+                expected("150 - Heiße Nächte im Dezember - Teil 01",
+                         "150 - Heiße Nächte im Dezember - Teil 10"),
+                root / "work",
+            )
+            self.assertEqual([p.read_bytes() for p in result], [b"one", b"ten"])
+
+    def test_exact_embedded_title_matches_arbitrary_filename(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tagged = root / "random-8472.mp3"
+            tagged.write_bytes(b"audio")
+            tags = ID3()
+            tags.add(TIT2(encoding=3, text="Canonical Track"))
+            tags.save(tagged)
+            archive = make_archive(root, [(tagged.name, tagged.read_bytes())])
+            manifest: dict = {}
+            import_audio_files([archive], expected("Canonical Track"), root / "work",
+                               manifest_out=manifest)
+            self.assertEqual(manifest["tracks"][0]["matching_rule"], "exact_embedded_title")
+
+    def test_album_and_track_metadata_identifies_arbitrary_filename(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tagged = root / "random-8472.mp3"
+            tagged.write_bytes(b"audio")
+            tags = ID3()
+            tags.add(TALB(encoding=3, text="Verified Album"))
+            tags.add(TRCK(encoding=3, text="1/2"))
+            tags.save(tagged)
+            archive = make_archive(root, [(tagged.name, tagged.read_bytes())])
+            manifest: dict = {}
+            import_audio_files([archive], expected("Unknown title"), root / "work",
+                               manifest_out=manifest, album_title="Verified Album")
+            self.assertEqual(manifest["tracks"][0]["matching_rule"],
+                             "verified_album_and_track_metadata")
+
+    def test_album_and_track_metadata_rejects_wrong_album(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tagged = root / "random-8472.mp3"
+            tagged.write_bytes(b"audio")
+            tags = ID3()
+            tags.add(TALB(encoding=3, text="Different Album"))
+            tags.add(TRCK(encoding=3, text="1/2"))
+            tags.save(tagged)
+            archive = make_archive(root, [(tagged.name, tagged.read_bytes())])
+            with self.assertRaisesRegex(RuntimeError, "uniquely identify"):
+                import_audio_files([archive], expected("Unknown title"), root / "work",
+                                   album_title="Verified Album")
+
+    def test_unidentified_arbitrary_filename_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = make_archive(root, [("random-8472.mp3", b"audio")])
+            with self.assertRaisesRegex(RuntimeError, "uniquely identify"):
+                import_audio_files([archive], expected("Canonical Track"), root / "work")
 
 
 if __name__ == "__main__":

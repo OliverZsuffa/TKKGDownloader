@@ -14,6 +14,9 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [015: Robust Spotisaver track identity](015-robust-spotisaver-track-identity/request.md) — identify tracks through exact filename variants, embedded metadata, and verified album identity without fuzzy automatic matching.
+
+
 - [013: Diagnose and produce a high-quality episode 150 merge](013-episode-150-audio-quality-diagnostics/request.md) — preserve Spotisaver sources, inspect all 40 tracks, compare stream-copy and decoded PCM merging, and review all 39 boundaries.
 
 - [012: Complete Spotisaver ZIP download and improve progress output](012-spotisaver-zip-button-and-progress/request.md) — read the ETA and track progress, then click the final visible Download ZIP control to trigger the actual browser download.
