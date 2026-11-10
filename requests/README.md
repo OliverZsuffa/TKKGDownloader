@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [012: Complete Spotisaver ZIP download and improve progress output](012-spotisaver-zip-button-and-progress/request.md) — read the ETA and track progress, then click the final visible Download ZIP control to trigger the actual browser download.
+
 - [011: Retry Spotisaver after a queue rejection](011-spotisaver-queue-retry/request.md) — wait 30 seconds after an explicit queue rejection, close the modal, and submit the album request again.
 - [010: Wait for Spotisaver's queued browser download](010-spotisaver-wait-for-download-event/request.md) — monitor queue notices and modal progress until the browser signals the download, without a fixed timeout or repeated clicks.
 - [009: Poll Spotisaver for the album download button](009-spotisaver-button-first-readiness/request.md) — poll the real download button every second, click immediately when ready, and preserve strict archive validation.

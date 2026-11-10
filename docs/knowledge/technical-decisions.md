@@ -40,6 +40,12 @@ Every major browser stage emits timestamped, flushed diagnostics with elapsed ti
 
 Do not use private endpoints, stealth plugins, CAPTCHA bypasses, login bypasses, access-control workarounds, or unattended catalogue downloads. Stop when the site presents a restriction or its interface cannot be verified. Spotisaver's permission and limits are separate from technical implementation and must be respected.
 
+## 008. Treat Spotisaver playlist processing and ZIP download as separate stages
+
+The website may finish processing every playlist track and create a ZIP archive without triggering a browser download. The provider must then locate and click the visible, enabled `Download ZIP` control in the active modal. Keep the browser download listener registered from before the initial album request through queue retries, processing, archive creation, and the final ZIP-button click. Only the subsequent browser download event confirms that the archive is being transferred. Save and validate the archive before reporting success. The modal ETA and track counter are informational progress signals. ETA must never trigger retries, impose a timeout, or prove completion. Show concise progress summaries by default while retaining detailed diagnostics for state transitions and failures.
+
+The playlist processing state and final ZIP transfer are separate. Read the modal track counter, percentage, and ETA to render a pip-style in-place terminal progress bar, with concise periodic output in non-interactive terminals. ETA is informational only. When the modal reports `ZIP archive created.`, locate the unique visible, enabled `Download ZIP` button by accessible name or exact rendered text scoped to the active modal, then click it exactly once. Keep the browser download listener registered from before the first album click through queue retries and the final ZIP click. Only the subsequent browser download event, a saved non-empty archive, strict track validation, and successful merge can establish completion. If the ZIP button cannot be identified, stop and report the active modal's visible controls rather than guessing a selector.
+
 ## Verification status
 
 Automated tests cover the data contract, CLI selection, safe ZIP import, filename matching, and downloader behaviour. Real Spotisaver download, FFmpeg merge, and playback remain separate end to end checks and must not be reported as passed until tested locally.

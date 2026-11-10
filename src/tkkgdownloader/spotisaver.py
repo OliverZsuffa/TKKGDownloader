@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import re
+import sys
 import time
 import traceback
 from typing import Any
@@ -20,8 +21,14 @@ def _normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value)
 
 
+_ACTIVE_PROGRESS_REPORTER: Any | None = None
+
+
 def _log(message: str, started: float | None = None) -> None:
     """Print a timestamped, flushed diagnostic line."""
+    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if reporter is not None:
+        reporter.finish()
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     elapsed = f" +{time.monotonic() - started:.1f}s" if started is not None else ""
     print(f"[{timestamp}{elapsed}] {message}", flush=True)
@@ -63,7 +70,7 @@ def _log_selector_state(page: Any, selector: str) -> int:
 
 
 def _read_download_modal(page: Any) -> dict[str, str]:
-    """Read visible status text from Spotisaver's rendered download modal."""
+    """Read status, progress, ETA, and visible controls from Spotisaver's modal."""
     return page.evaluate(
         """() => {
             const read = (selector) => {
@@ -78,6 +85,14 @@ def _read_download_modal(page: Any) -> dict[str, str]:
                 ? [progress.getAttribute("aria-valuenow"), progress.style.width]
                     .filter(Boolean).join(" ")
                 : "";
+            const eta = document.querySelector("#est_timeModalBody");
+            const etaStyle = eta ? window.getComputedStyle(eta) : null;
+            const etaVisible = Boolean(eta && etaStyle.display !== "none" && etaStyle.visibility !== "hidden");
+            const etaPart = (name) => {
+                if (!etaVisible) return "";
+                const element = eta.querySelector('[data-eta-part="' + name + '"]');
+                return element ? (element.innerText || element.textContent || "").trim() : "";
+            };
             const retryControls = Array.from(
                 document.querySelectorAll(".modal.show button, .modal.show a")
             ).filter((element) => {
@@ -86,17 +101,134 @@ def _read_download_modal(page: Any) -> dict[str, str]:
             }).map((element) => ({
                 text: (element.innerText || element.textContent || "").trim(),
                 id: element.id || "",
-                aria: element.getAttribute("aria-label") || ""
+                aria: element.getAttribute("aria-label") || "",
+                disabled: Boolean(element.disabled)
             }));
             return {
                 status: read("#downloadStatusText"),
                 log: read("#downloadMiniLog"),
                 failed: read("#downloadFailedBadge"),
                 progress: progressText,
+                eta: etaVisible ? (eta.innerText || eta.textContent || "").trim() : "",
+                eta_template: etaVisible ? (eta.getAttribute("data-eta-template") || "") : "",
+                eta_minutes: etaPart("minutes"),
+                eta_seconds: etaPart("seconds"),
                 controls: JSON.stringify(retryControls)
             };
         }"""
     )
+
+
+def _parse_track_progress(snapshot: dict[str, str]) -> tuple[int, int, int] | None:
+    """Return completed tracks, total tracks, and percentage from a modal snapshot."""
+    match = re.search(r"Downloaded\s+(\d+)\s+of\s+(\d+)", snapshot.get("status", ""), re.I)
+    if match:
+        completed, total = int(match.group(1)), int(match.group(2))
+        if total > 0 and 0 <= completed <= total:
+            return completed, total, round(completed * 100 / total)
+
+    progress = snapshot.get("progress", "")
+    value = re.search(r"(\d+(?:\.\d+)?)", progress)
+    if value:
+        percentage = max(0, min(100, round(float(value.group(1)))))
+        return percentage, 100, percentage
+    return None
+
+
+def _format_eta(snapshot: dict[str, str]) -> str | None:
+    """Format a visible ETA without treating it as a completion signal."""
+    try:
+        minutes = int(snapshot.get("eta_minutes", ""))
+        seconds = int(snapshot.get("eta_seconds", ""))
+    except (TypeError, ValueError):
+        return None
+    if minutes < 0 or not 0 <= seconds <= 59:
+        return None
+    return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
+
+
+def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:
+    """Render a compact pip-style progress line from the current modal snapshot."""
+    progress = _parse_track_progress(snapshot)
+    if progress is None:
+        return None
+    completed, total, percentage = progress
+    filled = round(width * percentage / 100)
+    bar = "█" * filled + "░" * (width - filled)
+    eta = _format_eta(snapshot)
+    eta_text = f"  ETA {eta}" if eta else ""
+    if not re.search(r"Downloaded\s+\d+\s+of\s+\d+", snapshot.get("status", ""), re.I):
+        return f"Spotisaver  [{bar}]  {percentage}%{eta_text}"
+    return f"Spotisaver  [{bar}]  {completed}/{total} tracks  {percentage}%{eta_text}"
+
+
+class _ProgressReporter:
+    """Render progress in place on interactive terminals and periodically otherwise."""
+
+    def __init__(self) -> None:
+        try:
+            self.interactive = bool(sys.stdout.isatty())
+        except (AttributeError, OSError):
+            self.interactive = False
+        self.active_line = False
+        self.last_line: str | None = None
+        self.last_report = time.monotonic()
+
+    def update(self, snapshot: dict[str, str], started: float) -> None:
+        line = _render_progress_bar(snapshot)
+        if line is None or (self.interactive and line == self.last_line):
+            return
+        now = time.monotonic()
+        if self.interactive:
+            print("\r" + line, end="", flush=True)
+            self.active_line = True
+            self.last_line = line
+        elif now - self.last_report >= 15:
+            _log(f"{line}  ({now - started:.0f}s elapsed)", started)
+            self.last_report = now
+            self.last_line = line
+
+    def finish(self) -> None:
+        if self.active_line:
+            print(flush=True)
+            self.active_line = False
+
+
+def _find_zip_download_button(page: Any) -> Any | None:
+    """Find one visible, enabled Download ZIP button inside the active modal."""
+    modal = page.locator(".modal.show")
+    if not modal.count() or not modal.first.is_visible():
+        return None
+
+    try:
+        buttons = modal.first.get_by_role("button", name=re.compile(r"^\s*Download ZIP\s*$", re.I))
+        count = buttons.count()
+        if count == 1:
+            candidate = buttons.first
+            return candidate if candidate.is_visible() and candidate.is_enabled() else None
+        if count > 1:
+            raise RuntimeError(f"Found {count} matching Download ZIP buttons in the active modal.")
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
+    # Accessible-name lookup can miss sites whose visible label is assembled
+    # from nested spans. Fall back to exact rendered button text in this modal.
+    buttons = modal.first.locator("button")
+    matches = []
+    for index in range(buttons.count()):
+        candidate = buttons.nth(index)
+        try:
+            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            if re.fullmatch(r"Download ZIP", label, re.I):
+                matches.append(candidate)
+        except Exception:
+            continue
+    if len(matches) != 1:
+        return None
+    candidate = matches[0]
+    return candidate if candidate.is_visible() and candidate.is_enabled() else None
 
 
 def _queue_retry_seconds(snapshot: dict[str, str]) -> int | None:
@@ -146,6 +278,11 @@ def _download_click(
     last_heartbeat = started
     queue_started: float | None = None
     attempt = 1
+    zip_button_clicked = False
+    last_phase = ""
+    progress_reporter = _ProgressReporter()
+    global _ACTIVE_PROGRESS_REPORTER
+    _ACTIVE_PROGRESS_REPORTER = progress_reporter
     _log(f"Preparing browser download; target directory: {target}")
     page.on("download", lambda download: download_events.append(download))
     _log("Registered browser download listener before clicking.")
@@ -276,24 +413,59 @@ def _download_click(
             )
             queue_started = None
 
-        if snapshot and snapshot != last_snapshot:
+        if snapshot:
+            progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
-            log_text = snapshot.get("log", "")
-            if not queue_busy and (status or log_text):
-                _log(
-                    f"Spotisaver modal status: {status[:240]!r}; "
-                    f"message: {log_text[:360]!r}",
-                    started,
-                )
-            if snapshot.get("progress"):
-                _log(f"Spotisaver progress indicator: {snapshot['progress']!r}", started)
-            if snapshot.get("controls"):
-                _log(f"Visible modal controls: {snapshot['controls'][:500]}", started)
+            combined_status = " ".join((status, snapshot.get("log", "")))
+            if re.search(r"creating ZIP archive", combined_status, re.I):
+                phase = "creating ZIP archive"
+            elif re.search(r"ZIP archive created", combined_status, re.I):
+                phase = "ZIP archive ready"
+            elif re.search(r"Downloaded\\s+\\d+\\s+of\\s+\\d+", status, re.I):
+                phase = "downloading playlist tracks"
+            else:
+                phase = ""
+            if phase and phase != last_phase:
+                _log(f"Spotisaver phase: {phase}.", started)
+                last_phase = phase
             last_snapshot = snapshot
 
         failure = _download_failure(snapshot)
         if failure:
             raise RuntimeError(f"Spotisaver reported a download failure: {failure}")
+
+        if (
+            not zip_button_clicked
+            and re.search(r"ZIP archive created", " ".join((snapshot.get("status", ""), snapshot.get("log", ""))), re.I)
+        ):
+            progress_reporter.finish()
+            try:
+                zip_button = _find_zip_download_button(page)
+            except RuntimeError as exc:
+                _log(f"ZIP button discovery failed: {exc}", started)
+                _log(f"Last modal snapshot: {snapshot!r}", started)
+                raise
+            if zip_button is None:
+                _log("ZIP archive is ready, but no unique visible enabled 'Download ZIP' button was found.", started)
+                _log(f"Last modal snapshot: {snapshot!r}", started)
+                try:
+                    _log_visible_download_controls(page)
+                except Exception as diagnostic_error:
+                    _log(f"Could not inventory visible controls: {diagnostic_error}", started)
+                raise RuntimeError(
+                    "Spotisaver created the ZIP archive, but its visible enabled Download ZIP button "
+                    "could not be identified. Please provide the live modal button HTML and the "
+                    f"visible-control diagnostics. Modal: {snapshot!r}"
+                )
+            _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
+            try:
+                zip_button.click()
+            except Exception as exc:
+                _log(f"Download ZIP button click failed: {type(exc).__name__}: {exc}", started)
+                raise
+            zip_button_clicked = True
+            last_phase = "ZIP download requested"
+            _log("Download ZIP click returned. Waiting for the browser download event.", started)
 
         now = time.monotonic()
         if now - last_heartbeat >= 15:
@@ -307,6 +479,7 @@ def _download_click(
             last_heartbeat = now
         page.wait_for_timeout(1_000)
 
+    progress_reporter.finish()
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
     suggested = Path(download.suggested_filename).name
