@@ -183,7 +183,7 @@ class DiagnosticIntegrationTests(unittest.TestCase):
             self.assertFalse(report["candidates_generated"])
             self.assertTrue(good.is_file())
             self.assertTrue(bad.is_file())
-            self.assertFalse((root / "workspace" / "candidates").glob("*.mp3").__next__() if list((root / "workspace" / "candidates").glob("*.mp3")) else False)
+            self.assertEqual(list((root / "workspace" / "candidates").glob("*.mp3")), [])
 
 
 if __name__ == "__main__":
