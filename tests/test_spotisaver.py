@@ -97,7 +97,7 @@ class SpotisaverPageWaitTests(unittest.TestCase):
         }
         _wait_for_album_data(page, plan)
         self.assertIsNotNone(page.call)
-        self.assertEqual(page.call[1][0], "heißenächteimdezem" if False else "heißenächteimdezember")
+        self.assertEqual(page.call[1][0], "heienachteimdezember")
         self.assertEqual(page.call[1][1], ["tkkg150teil01", "tkkg150teil02"])
         self.assertEqual(page.call[2], 120_000)
 
