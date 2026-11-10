@@ -77,8 +77,9 @@ class DownloaderSourceTests(unittest.TestCase):
         commands = []
         patches = self._patches(commands)
         with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
-             patch("tkkgdownloader.downloader.merge_tracks") as merge:
-            result = download_episode(episode, Path(temp_dir), assume_yes=True)
+             patch("tkkgdownloader.downloader.merge_tracks") as merge, \
+             patch("builtins.input", side_effect=AssertionError("Merge must not ask for confirmation")):
+            result = download_episode(episode, Path(temp_dir))
 
         self.assertTrue(result.name.startswith("TKKG 150"))
         self.assertEqual(len(commands), 3)
@@ -96,7 +97,7 @@ class DownloaderSourceTests(unittest.TestCase):
         patches = self._patches(commands)
         with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
              patch("tkkgdownloader.downloader.merge_tracks") as merge:
-            download_episode(episode, Path(temp_dir), assume_yes=True)
+            download_episode(episode, Path(temp_dir))
         self.assertEqual(len(commands), 2)
         self.assertEqual(len(merge.call_args.args[0]), 2)
 
@@ -107,7 +108,7 @@ class DownloaderSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
              patch("tkkgdownloader.downloader.merge_tracks") as merge:
             with self.assertRaisesRegex(RuntimeError, "verified track 2/2"):
-                download_episode(episode, Path(temp_dir), assume_yes=True)
+                download_episode(episode, Path(temp_dir))
         self.assertEqual(len(commands), 2)
         merge.assert_not_called()
 
@@ -118,14 +119,14 @@ class DownloaderSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
              patch("tkkgdownloader.downloader.merge_tracks") as merge:
             with self.assertRaisesRegex(RuntimeError, "did not produce the expected MP3"):
-                download_episode(episode, Path(temp_dir), assume_yes=True)
+                download_episode(episode, Path(temp_dir))
         merge.assert_not_called()
 
     def test_missing_verified_mapping_fails_clearly(self):
         episode = Episode(150, "Heiße Nächte im Dezember")
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaisesRegex(RuntimeError, "No usable verified audio source"):
-                download_episode(episode, Path(temp_dir), assume_yes=True)
+                download_episode(episode, Path(temp_dir))
 
 
 if __name__ == "__main__":
