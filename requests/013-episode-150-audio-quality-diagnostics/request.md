@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Awaiting Oliver's approval.
+Approved. Implementation is in progress on PR #20; local episode processing remains pending.
 
 ## Objective
 
