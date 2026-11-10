@@ -111,19 +111,3 @@ def validate_audio_release(audio_release: Any) -> dict[str, Any]:
         "track_count": expected_count,
     }
 
-
-def build_playlist_query(plan: dict[str, Any]) -> str | None:
-    playlist_url = plan.get("youtube_music_playlist_url")
-    if not playlist_url:
-        return None
-    return f"{playlist_url}|{plan['spotify_album_url']}"
-
-
-def build_individual_track_queries(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {
-            "track_number": track["track_number"],
-            "query": f"{track['youtube_music_url']}|{track['spotify_track_url']}",
-        }
-        for track in plan["tracks"]
-    ]
