@@ -157,7 +157,7 @@ def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | Non
     bar = "█" * filled + "░" * (width - filled)
     eta = _format_eta(snapshot)
     eta_text = f"  ETA {eta}" if eta else ""
-    if total == 100 and "Downloaded" not in snapshot.get("status", ""):
+    if not re.search(r"Downloaded\\s+\\d+\\s+of\\s+\\d+", snapshot.get("status", ""), re.I):
         return f"Spotisaver  [{bar}]  {percentage}%{eta_text}"
     return f"Spotisaver  [{bar}]  {completed}/{total} tracks  {percentage}%{eta_text}"
 
