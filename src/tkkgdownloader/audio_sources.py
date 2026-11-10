@@ -1,4 +1,4 @@
-"""Validate verified Spotify and YouTube Music source pairings from TKKGData."""
+"""Validate verified Spotify and YouTube Music track mappings from TKKGData."""
 
 from __future__ import annotations
 
