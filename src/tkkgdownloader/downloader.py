@@ -125,25 +125,12 @@ def _download_verified_tracks(yt_dlp: list[str], plan: dict, directory: Path, ep
     return _validate_downloaded_files(directory, plan["track_count"])
 
 
-def _confirm_merge(assume_yes: bool) -> bool:
-    if assume_yes:
-        return True
-    if not sys.stdin.isatty():
-        raise RuntimeError(
-            "Confirmation is required in non-interactive mode. "
-            "Review the verified source and rerun with --yes to accept it."
-        )
-    answer = input("Merge these verified tracks into one MP3? [y/N] ").strip().lower()
-    return answer in {"y", "yes"}
-
-
 def download_episode(
     episode: Episode,
     output_dir: Path,
     *,
     overwrite: bool = False,
-    assume_yes: bool = False,
-) -> Path | None:
+) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
     if final_path.exists() and not overwrite:
@@ -167,9 +154,6 @@ def download_episode(
         print("Verified downloaded files:", flush=True)
         for track in tracks:
             print(f"  {track.name}", flush=True)
-        if not _confirm_merge(assume_yes):
-            print("Cancelled. No combined MP3 was created.", flush=True)
-            return None
         print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
         merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
     print(f"Done: {final_path}", flush=True)
@@ -181,8 +165,7 @@ def download_episode_spotisaver(
     output_dir: Path,
     *,
     overwrite: bool = False,
-    assume_yes: bool = False,
-) -> Path | None:
+) -> Path:
     """Download one episode through Spotisaver's normal browser interface."""
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
@@ -210,9 +193,6 @@ def download_episode_spotisaver(
         print("All downloaded files matched the verified TKKGData tracklist:", flush=True)
         for track in tracks:
             print(f"  {track.name}", flush=True)
-        if not _confirm_merge(assume_yes):
-            print("Cancelled. No combined MP3 was created.", flush=True)
-            return None
         print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
         merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
     print(f"Done: {final_path}", flush=True)

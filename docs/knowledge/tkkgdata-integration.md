@@ -31,4 +31,4 @@ The playlist URL remains provenance metadata. Neither provider performs text sea
 
 ## Compatibility boundary
 
-The CLI, episode range processing, output naming, confirmation behaviour, overwrite protection, FFmpeg merge, and local files remain TKKGDownloader responsibilities. No independent catalogue or source discovery belongs in this repository.
+The CLI, episode range processing, output naming, automatic FFmpeg merge, overwrite protection, and local files remain TKKGDownloader responsibilities. No independent catalogue or source discovery belongs in this repository.

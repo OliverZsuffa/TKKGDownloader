@@ -21,8 +21,7 @@ TKKGDownloader is a read only consumer. It does not scrape sources, search Spoti
 4. Use the default yt-dlp provider with exact verified YouTube Music video URLs, or explicitly select the Spotisaver browser provider.
 5. For Spotisaver, open one canonical album in visible Chromium, poll for the real album download button, and use normal website download controls.
 6. Validate every downloaded MP3 against the expected track titles and order.
-7. Ask for confirmation unless --yes was supplied.
-8. Merge the episode parts into one MP3 with FFmpeg.
+7. Automatically merge the episode parts into one MP3 with FFmpeg after every track has passed validation.
 
 Spotisaver mode is intentionally restricted to one episode per invocation. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.
 
