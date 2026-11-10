@@ -17,7 +17,18 @@
 
 ## Automated verification
 
-Pending.
+GitHub Actions run 128 passed on 2026-11-10:
+
+- Project installation: passed
+- Python compilation: passed
+- Published TKKGData contract smoke test: passed
+- Unit tests: passed, 47 tests
+- New polling tests: immediate readiness after repeated checks, timeout behaviour, hidden and disabled control rejection
+- Python compilation warning test: passed, no invalid escape SyntaxWarning
+
+Run: https://github.com/OliverZsuffa/TKKGDownloader/actions/runs/42807855028
+
+CI uses mocked browser and download behaviour. It does not perform a real Spotisaver download.
 
 ## Manual verification
 
