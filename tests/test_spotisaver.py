@@ -58,7 +58,7 @@ class SpotisaverImportTests(unittest.TestCase):
             with zipfile.ZipFile(archive, "w") as zipped:
                 zipped.writestr("TKKG 150 Teil 01.mp3", b"first")
                 zipped.writestr("TKKG 150 Teil 03.mp3", b"third")
-            with self.assertRaisesRegex(RuntimeError, "uniquely match"):
+            with self.assertRaisesRegex(RuntimeError, "uniquely identify"):
                 import_audio_files([archive], tracks(), root / "work")
 
     def test_rejects_path_traversal(self):
