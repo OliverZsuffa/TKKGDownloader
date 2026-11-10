@@ -21,6 +21,40 @@ def _album_title(title: str) -> str:
     return title.split("/", 1)[-1].strip() if "/" in title else title.strip()
 
 
+
+def _wait_for_album_data(page: Any, plan: dict, timeout_ms: int = 120_000) -> None:
+    """Wait for Spotisaver's client-side album lookup and tracklist to finish."""
+    album = _normalize(_album_title(plan["spotify_album_title"]))
+    track_titles = [
+        _normalize(track["spotify_title"])
+        for track in plan["tracks"]
+        if len(_normalize(track["spotify_title"])) >= 5
+    ]
+    if len(album) < 5 or not track_titles:
+        raise RuntimeError("TKKGData does not contain enough album identity data to verify Spotisaver.")
+
+    print(
+        "Waiting for Spotisaver to load the album metadata and complete tracklist "
+        f"(up to {timeout_ms // 1000} seconds)...",
+        flush=True,
+    )
+    page.wait_for_function(
+        """([expectedAlbum, expectedTracks]) => {
+            const body = document.body?.innerText || "";
+            const normalize = value => value
+                .normalize("NFKD")
+                .replace(/[\\u0300-\\u036f]/g, "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "");
+            const content = normalize(body);
+            return content.includes(expectedAlbum) &&
+                expectedTracks.every(title => content.includes(title));
+        }""",
+        arg=[album, track_titles],
+        timeout=timeout_ms,
+    )
+    print("Spotisaver album metadata and all expected track titles are loaded.", flush=True)
+
 def _verify_album_page(page: Any, plan: dict) -> None:
     body = page.locator("body").inner_text(timeout=15_000)
     normalized_body = _normalize(body)
@@ -104,6 +138,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=60_000)
                 page.locator("body").wait_for(state="visible", timeout=30_000)
+                _wait_for_album_data(page, plan, timeout_ms=120_000)
                 _verify_album_page(page, plan)
                 album_download = _find_album_download(page)
                 if album_download is not None:
@@ -129,8 +164,9 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                 return files
             except PlaywrightTimeoutError as exc:
                 raise RuntimeError(
-                    "Spotisaver did not complete the expected page or download action "
-                    "within the timeout. Check the visible browser and try again later."
+                    "Spotisaver did not finish loading the expected album data or complete "
+                    "the download within the timeout. The browser was left without further "
+                    "interaction. Check the site and try again."
                 ) from exc
             finally:
                 browser.close()

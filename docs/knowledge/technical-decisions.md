@@ -32,7 +32,7 @@ Downloaded audio and temporary files stay outside version control. The downloade
 
 Spotisaver is selected explicitly with --provider spotisaver. Playwright launches visible Chromium and uses the public album page and normal rendered download controls. It prefers the site's album ZIP option and otherwise downloads individual track controls sequentially.
 
-The provider verifies the album title and all expected track titles before starting. ZIP extraction rejects traversal paths and symlinks. Imported MP3 filenames must map uniquely to every expected TKKGData track. No merge occurs unless all tracks match.
+The provider waits up to 120 seconds for the site's client-side album lookup and complete tracklist to load, then verifies the album title and all expected track titles before starting. ZIP extraction rejects traversal paths and symlinks. Imported MP3 filenames must map uniquely to every expected TKKGData track. No merge occurs unless all tracks match.
 
 Do not use private endpoints, stealth plugins, CAPTCHA bypasses, login bypasses, access-control workarounds, or unattended catalogue downloads. Stop when the site presents a restriction or its interface cannot be verified. Spotisaver's permission and limits are separate from technical implementation and must be respected.
 
