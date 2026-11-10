@@ -662,14 +662,14 @@ class SpotisaverConsoleTests(unittest.TestCase):
             with contextlib.redirect_stdout(stream):
                 reporter = _ProgressReporter()
                 reporter.stage("Queue busy.", "warning")
-        self.assertEqual(stream.getvalue(), "Queue busy.\\n")
+        self.assertEqual(stream.getvalue(), "Queue busy.\n")
 
     def test_noninteractive_output_disables_ansi(self):
         stream = io.StringIO()
         with contextlib.redirect_stdout(stream):
             reporter = _ProgressReporter()
             reporter.stage("Browser opened.", "success")
-        self.assertEqual(stream.getvalue(), "Browser opened.\\n")
+        self.assertEqual(stream.getvalue(), "Browser opened.\n")
 
     def test_interactive_stage_uses_semantic_colour(self):
         class TTY(io.StringIO):
@@ -682,9 +682,9 @@ class SpotisaverConsoleTests(unittest.TestCase):
                 with contextlib.redirect_stdout(stream):
                     reporter = _ProgressReporter()
                     reporter.stage("Queue busy.", "warning")
-        self.assertIn("\\033[33m", stream.getvalue())
+        self.assertIn("\033[33m", stream.getvalue())
         self.assertIn("Queue busy.", stream.getvalue())
-        self.assertIn("\\033[0m", stream.getvalue())
+        self.assertIn("\033[0m", stream.getvalue())
 
 
 if __name__ == "__main__":
