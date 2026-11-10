@@ -33,3 +33,8 @@ Oliver approved the implementation plan.
 - No real YouTube audio was downloaded in this implementation environment.
 - No real Windows run or FFmpeg playback check has been performed.
 - CI results will be recorded after the pull request workflow completes.
+
+### CI
+
+- GitHub Actions run 42780852150 passed on commit c889f2c553b543c226293c65119c9802c00187fa. This run covered the direct yt-dlp implementation, test updates, and live TKKGData contract smoke test.
+- Subsequent changes to the Knowledge Base are documentation only. A fresh run is being triggered for the final branch head.
