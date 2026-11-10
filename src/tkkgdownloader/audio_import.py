@@ -20,7 +20,7 @@ def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKC", value).casefold()
     value = unicodedata.normalize("NFKD", value)
     value = "".join(char for char in value if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", "", value.encode("ascii", "ignore").decode("ascii"))
+    return "".join(char for char in value if char.isalnum())
 
 
 def _sha256(path: Path) -> str:
