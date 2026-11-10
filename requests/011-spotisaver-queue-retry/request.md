@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Approved by Oliver on 2026-11-10. Implementation in progress.
 
 ## Objective
 
