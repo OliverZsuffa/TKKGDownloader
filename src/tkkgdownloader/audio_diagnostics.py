@@ -200,15 +200,17 @@ def _volume_metrics(path: Path, ffmpeg: str, *, silence_seconds: int = 5) -> dic
         "-af", "astats=metadata=0:reset=0", "-f", "null", "-"
     ])
     import re
-    rms = re.search(r"RMS level dB:\s*(-?[0-9.]+)", volume["stderr"])
-    peak = re.search(r"Peak level dB:\s*(-?[0-9.]+)", volume["stderr"])
+    rms_values = re.findall(r"RMS level dB:\s*(-?[0-9.]+)", volume["stderr"])
+    peak_values = re.findall(r"Peak level dB:\s*(-?[0-9.]+)", volume["stderr"])
+    rms = float(rms_values[-1]) if rms_values else None
+    peak = float(peak_values[-1]) if peak_values else None
     silence = _run([
         ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0", "-vn",
         "-af", f"silencedetect=noise=-60dB:d={silence_seconds}", "-f", "null", "-"
     ])
     return {
-        "rms_level_db": float(rms.group(1)) if rms else None,
-        "peak_level_db": float(peak.group(1)) if peak else None,
+        "rms_level_db": rms,
+        "peak_level_db": peak,
         "volume_command": volume["command"],
         "volume_returncode": volume["returncode"],
         "volume_stderr": volume["stderr"],
@@ -263,6 +265,12 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
         print(f"Inspected track {index}/{len(tracks)}: {path.name}", flush=True)
     positive = [item for item in durations if item > 0]
     median = sorted(positive)[len(positive) // 2] if positive else 0
+    rms_values = [
+        item["level_and_silence_metrics"]["rms_level_db"]
+        for item in records
+        if item["level_and_silence_metrics"]["rms_level_db"] is not None
+    ]
+    median_rms = sorted(rms_values)[len(rms_values) // 2] if rms_values else None
     for record in records:
         flags = []
         if record["decode_returncode"] != 0:
@@ -271,6 +279,9 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             flags.append("duration_outlier")
         if record["size_bytes"] < 16_384:
             flags.append("unusually_small_file")
+        rms = record["level_and_silence_metrics"]["rms_level_db"]
+        if median_rms is not None and rms is not None and abs(rms - median_rms) > 12:
+            flags.append("rms_level_outlier_review_required")
         if "silence_start" in record["level_and_silence_metrics"]["silence_stderr"]:
             flags.append("long_silence_detected_review_required")
         record["flags"] = flags
