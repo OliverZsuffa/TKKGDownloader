@@ -14,6 +14,7 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [007: Spotisaver action button workflow](007-spotisaver-action-buttons/request.md) — prioritise the actual full-playlist download button and use the scroll control only as a fallback.
 - [006: Spotisaver browser provider](006-spotisaver-import-workflow/request.md) — download one requested album through the visible website interface, validate its tracks, and merge it locally.
 - [005: Fix verified YouTube Music downloads](005-fix-youtube-music-download/request.md) — use exact verified TKKGData track IDs.
 - [004: Make TKKGDownloader a TKKGData consumer](004-tkkgdata-consumer/request.md) — consume shared episode and verified audio release data.

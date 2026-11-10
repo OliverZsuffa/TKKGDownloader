@@ -30,7 +30,7 @@ Downloaded audio and temporary files stay outside version control. The downloade
 
 ## 007. Spotisaver is an explicit one-episode browser provider
 
-Spotisaver is selected explicitly with --provider spotisaver. Playwright launches visible Chromium and uses the public album page and normal rendered download controls. It prefers the site's album ZIP option and otherwise downloads individual track controls sequentially.
+Spotisaver is selected explicitly with --provider spotisaver. Playwright launches visible Chromium and uses the public album page and normal rendered download controls. It first looks for the visible `#downloadAllBtn` control labelled `Download entire playlist` and clicks it directly. It only clicks `button.btn-playlist-download` labelled `Download Playlist` when the real action is not already visible. That intermediate control only scrolls to the action area. If the album action remains unavailable, the provider logs concise diagnostics for visible controls before considering individual track controls sequentially.
 
 The provider waits up to 120 seconds for the site's client-side album lookup and complete tracklist to load, then verifies the album title and all expected track titles before starting. ZIP extraction rejects traversal paths and symlinks. Imported MP3 filenames must map uniquely to every expected TKKGData track. No merge occurs unless all tracks match.
 

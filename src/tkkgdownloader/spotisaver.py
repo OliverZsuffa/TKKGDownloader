@@ -90,12 +90,64 @@ def _download_click(page: Any, locator: Any, target: Path, timeout_ms: int) -> P
 
 
 def _find_album_download(page: Any) -> Any | None:
-    patterns = re.compile(r"(download\s*(all|album|zip)|album\s*download|download\s*as\s*zip)", re.I)
+    """Find the real album download control, preferring Spotisaver's stable ID."""
+    direct = page.locator("#downloadAllBtn")
+    if direct.count() and direct.first.is_visible():
+        label = direct.first.inner_text(timeout=3_000).strip()
+        if re.search(r"download\s+entire\s+playlist", label, re.I):
+            return direct.first
+
+    patterns = re.compile(
+        r"(download\s*(all|album|playlist|zip)|album\s*download|download\s*as\s*zip)",
+        re.I,
+    )
     for role in ("button", "link"):
         locator = page.get_by_role(role, name=patterns)
-        if locator.count():
-            return locator.first
+        for index in range(locator.count()):
+            candidate = locator.nth(index)
+            if candidate.is_visible():
+                label = candidate.inner_text(timeout=3_000).strip()
+                if "download playlist" not in label.lower():
+                    return candidate
     return None
+
+
+def _find_playlist_navigation(page: Any) -> Any | None:
+    """Find the intermediate button that only scrolls to the action area."""
+    locator = page.locator("button.btn-playlist-download")
+    if not locator.count():
+        return None
+    candidate = locator.first
+    if not candidate.is_visible():
+        return None
+    label = candidate.inner_text(timeout=3_000).strip()
+    return candidate if re.search(r"download\s+playlist", label, re.I) else None
+
+
+def _log_visible_download_controls(page: Any) -> None:
+    """Print a compact diagnostic list of visible buttons and links."""
+    controls = page.locator("button:visible, a:visible").evaluate_all(
+        """elements => elements.slice(0, 30).map(element => ({
+            tag: element.tagName.toLowerCase(),
+            text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
+            title: element.getAttribute("title") || "",
+            aria: element.getAttribute("aria-label") || "",
+            className: typeof element.className === "string" ? element.className : "",
+            href: element.getAttribute("href") || "",
+            download: element.getAttribute("download") || ""
+        }))"""
+    )
+    if not controls:
+        print("No visible buttons or links were found.", flush=True)
+        return
+    print("Visible page controls (diagnostics):", flush=True)
+    for item in controls:
+        details = ", ".join(
+            f"{key}={value!r}"
+            for key, value in item.items()
+            if value
+        )
+        print(f"  <{item['tag']}> {details}", flush=True)
 
 
 def _find_track_download(page: Any, title: str) -> Any | None:
@@ -107,11 +159,12 @@ def _find_track_download(page: Any, title: str) -> Any | None:
     current = text_locator
     for _ in range(6):
         buttons = current.get_by_role("button", name=re.compile(r"download", re.I))
-        if buttons.count() == 1:
-            return buttons.first
+        for index in range(buttons.count()):
+            candidate = buttons.nth(index)
+            if candidate.is_visible():
+                return candidate
         current = current.locator("xpath=..")
     return None
-
 
 def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int = 120_000) -> list[Path]:
     """Download one album through the normal visible website interface."""
@@ -140,14 +193,43 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                 page.locator("body").wait_for(state="visible", timeout=30_000)
                 _wait_for_album_data(page, plan, timeout_ms=120_000)
                 _verify_album_page(page, plan)
+                # Prefer the actual full-playlist action when it is already present.
+                # The separate "Download Playlist" control only scrolls the page.
                 album_download = _find_album_download(page)
+                if album_download is None:
+                    navigation = _find_playlist_navigation(page)
+                    if navigation is not None:
+                        print(
+                            "The album download action is not visible yet. "
+                            "Clicking the page's Download Playlist navigation control...",
+                            flush=True,
+                        )
+                        navigation.click()
+                        try:
+                            page.locator("#downloadAllBtn").wait_for(
+                                state="visible",
+                                timeout=min(timeout_ms, 15_000),
+                            )
+                        except PlaywrightTimeoutError:
+                            pass
+                        album_download = _find_album_download(page)
+
                 if album_download is not None:
-                    print("Starting the website's album download...", flush=True)
+                    label = album_download.inner_text(timeout=3_000).strip()
+                    print(
+                        f"Starting Spotisaver album download using visible control: {label!r}",
+                        flush=True,
+                    )
                     return [_download_click(page, album_download, destination, timeout_ms)]
 
                 print(
-                    "No album ZIP control was found. Downloading the visible track controls "
-                    "one at a time.",
+                    "No verified album download button was found. Inspecting visible controls "
+                    "before attempting individual track downloads.",
+                    flush=True,
+                )
+                _log_visible_download_controls(page)
+                print(
+                    "Downloading the visible track controls one at a time.",
                     flush=True,
                 )
                 files: list[Path] = []
