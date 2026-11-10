@@ -118,16 +118,25 @@ def _validate_expected_tracks(expected_tracks: list[dict[str, Any]]) -> list[dic
             raise RuntimeError(f"TKKGData contains an invalid track number: {number!r}.")
         if not isinstance(title, str) or not title.strip():
             raise RuntimeError(f"TKKGData track {number} has an empty or invalid Spotify title.")
-        key = _normalize(title)
-        if not key:
-            raise RuntimeError(f"TKKGData track {number} has a title that cannot be normalised.")
-        if key in normalized_titles:
-            other = normalized_titles[key]
-            raise RuntimeError(
-                f"TKKGData tracks {other} and {number} have colliding normalised titles. "
-                "The source mapping is ambiguous."
-            )
-        normalized_titles[key] = number
+        aliases = track.get("alternate_titles", [])
+        if isinstance(aliases, str):
+            aliases = [aliases]
+        if not isinstance(aliases, list):
+            raise RuntimeError(f"TKKGData track {number} has invalid alternate_titles metadata.")
+        titles = [title, *aliases]
+        for candidate in titles:
+            if not isinstance(candidate, str) or not candidate.strip():
+                raise RuntimeError(f"TKKGData track {number} has an empty or invalid alternate title.")
+            key = _normalize(candidate)
+            if not key:
+                raise RuntimeError(f"TKKGData track {number} has a title that cannot be normalised.")
+            if key in normalized_titles and normalized_titles[key] != number:
+                other = normalized_titles[key]
+                raise RuntimeError(
+                    f"TKKGData tracks {other} and {number} have colliding normalised titles or aliases. "
+                    "The source mapping is ambiguous."
+                )
+            normalized_titles[key] = number
         numbers.append(number)
     if len(numbers) != len(set(numbers)):
         raise RuntimeError("TKKGData contains duplicate track numbers.")
