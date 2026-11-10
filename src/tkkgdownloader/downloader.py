@@ -13,7 +13,7 @@ from pathlib import Path
 from .audio_sources import validate_audio_release
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
-from .spotisaver import download_and_import
+from .spotisaver import download_and_import, finish_console_output, report_stage
 
 
 def _command(name: str) -> list[str]:
@@ -180,20 +180,12 @@ def download_episode_spotisaver(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
-    print(f"Verified release: {plan['spotify_album_title']}", flush=True)
-    print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
-    print(f"Spotisaver album: https://spotisaver.net/en/album/{plan['spotify_album_url'].rsplit('/', 1)[-1]}/", flush=True)
-    print(
-        f"Processing one episode and validating all {plan['track_count']} expected tracks.",
-        flush=True,
-    )
-
-    with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_spotisaver_") as temp:
-        tracks = download_and_import(plan, Path(temp))
-        print("All downloaded files matched the verified TKKGData tracklist:", flush=True)
-        for track in tracks:
-            print(f"  {track.name}", flush=True)
-        print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
-        merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
-    print(f"Done: {final_path}", flush=True)
-    return final_path
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_spotisaver_") as temp:
+            tracks = download_and_import(plan, Path(temp), episode_number=episode.number)
+            report_stage("Merging MP3...", "info")
+            merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
+        report_stage(f"Done: {final_path}", "success")
+        return final_path
+    finally:
+        finish_console_output()
