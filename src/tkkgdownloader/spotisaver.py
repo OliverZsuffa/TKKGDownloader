@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import logging
+import os
 import re
 import sys
 import time
@@ -22,16 +24,117 @@ def _normalize(value: str) -> str:
 
 
 _ACTIVE_PROGRESS_REPORTER: Any | None = None
+_ACTIVE_DIAGNOSTIC_LOGGER: logging.Logger | None = None
+
+
+class _ProgressReporter:
+    """Keep normal terminal output concise and colour it by semantic state."""
+
+    _COLOURS = {
+        "info": "\033[36m",
+        "warning": "\033[33m",
+        "success": "\033[32m",
+        "error": "\033[31m",
+        "muted": "\033[90m",
+    }
+    _RESET = "\033[0m"
+
+    def __init__(self) -> None:
+        try:
+            self.interactive = bool(sys.stdout.isatty())
+        except (AttributeError, OSError):
+            self.interactive = False
+        self.colour = (
+            self.interactive
+            and os.environ.get("TERM", "").lower() != "dumb"
+            and not os.environ.get("NO_COLOR")
+        )
+        self.active_line = False
+        self.last_line: str | None = None
+        self.last_report = time.monotonic()
+
+    def _style(self, value: str, tone: str) -> str:
+        colour = self._COLOURS.get(tone)
+        return f"{colour}{value}{self._RESET}" if self.colour and colour else value
+
+    def stage(self, message: str, tone: str = "info") -> None:
+        self.finish()
+        print(self._style(message, tone), flush=True)
+
+    def update(self, snapshot: dict[str, str], started: float) -> None:
+        line = _render_progress_bar(snapshot)
+        if line is None:
+            return
+        if self.colour:
+            line = re.sub(
+                r"\[(█*)(░*)\]",
+                lambda match: "["
+                + self._style(match.group(1), "success")
+                + self._style(match.group(2), "muted")
+                + "]",
+                line,
+            )
+            line = re.sub(r"(ETA .+)$", lambda match: self._style(match.group(1), "info"), line)
+        if self.interactive:
+            if line == self.last_line:
+                return
+            print("\r" + line, end="", flush=True)
+            self.active_line = True
+            self.last_line = line
+        elif time.monotonic() - self.last_report >= 15 and line != self.last_line:
+            print(line, flush=True)
+            self.last_report = time.monotonic()
+            self.last_line = line
+
+    def finish(self) -> None:
+        if self.active_line:
+            print(flush=True)
+            self.active_line = False
+
+
+def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logger, Path]:
+    """Create a unique persistent log outside the temporary download workspace."""
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        log_dir = root / "TKKGDownloader" / "logs"
+    else:
+        log_dir = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+        log_dir = log_dir / "tkkgdownloader" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    episode = f"{episode_number:03d}" if episode_number is not None else "unknown"
+    path = log_dir / f"spotisaver-{episode}-{stamp}.log"
+    logger = logging.getLogger(f"tkkgdownloader.spotisaver.{episode}.{stamp}")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    return logger, path
 
 
 def _log(message: str, started: float | None = None) -> None:
-    """Print a timestamped, flushed diagnostic line."""
+    """Write browser and workflow diagnostics to the persistent run log only."""
+    logger = globals().get("_ACTIVE_DIAGNOSTIC_LOGGER")
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    elapsed = f" +{time.monotonic() - started:.1f}s" if started is not None else ""
+    if logger is not None:
+        logger.info("[%s%s] %s", timestamp, elapsed, message)
+
+
+def report_stage(message: str, tone: str = "info") -> None:
+    """Write a concise user-facing status message."""
+    global _ACTIVE_PROGRESS_REPORTER
+    if _ACTIVE_PROGRESS_REPORTER is None:
+        _ACTIVE_PROGRESS_REPORTER = _ProgressReporter()
+    _ACTIVE_PROGRESS_REPORTER.stage(message, tone)
+
+
+def finish_console_output() -> None:
+    """Finish an active progress line after the final merge stage."""
     reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if reporter is not None:
         reporter.finish()
-    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
-    elapsed = f" +{time.monotonic() - started:.1f}s" if started is not None else ""
-    print(f"[{timestamp}{elapsed}] {message}", flush=True)
 
 
 def _log_selector_state(page: Any, selector: str) -> int:
@@ -148,7 +251,7 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
 
 
 def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | None:
-    """Render a compact pip-style progress line from the current modal snapshot."""
+    """Render a compact progress line using only values currently known."""
     progress = _parse_track_progress(snapshot)
     if progress is None:
         return None
@@ -158,41 +261,8 @@ def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | Non
     eta = _format_eta(snapshot)
     eta_text = f"  ETA {eta}" if eta else ""
     if not re.search(r"Downloaded\s+\d+\s+of\s+\d+", snapshot.get("status", ""), re.I):
-        return f"Spotisaver  [{bar}]  {percentage}%{eta_text}"
-    return f"Spotisaver  [{bar}]  {completed}/{total} tracks  {percentage}%{eta_text}"
-
-
-class _ProgressReporter:
-    """Render progress in place on interactive terminals and periodically otherwise."""
-
-    def __init__(self) -> None:
-        try:
-            self.interactive = bool(sys.stdout.isatty())
-        except (AttributeError, OSError):
-            self.interactive = False
-        self.active_line = False
-        self.last_line: str | None = None
-        self.last_report = time.monotonic()
-
-    def update(self, snapshot: dict[str, str], started: float) -> None:
-        line = _render_progress_bar(snapshot)
-        if line is None or (self.interactive and line == self.last_line):
-            return
-        now = time.monotonic()
-        if self.interactive:
-            print("\r" + line, end="", flush=True)
-            self.active_line = True
-            self.last_line = line
-        elif now - self.last_report >= 15:
-            _log(f"{line}  ({now - started:.0f}s elapsed)", started)
-            self.last_report = now
-            self.last_line = line
-
-    def finish(self) -> None:
-        if self.active_line:
-            print(flush=True)
-            self.active_line = False
-
+        return f"[{bar}]  {percentage}%{eta_text}"
+    return f"[{bar}]  {completed}/{total} tracks  {percentage}%{eta_text}"
 
 def _find_zip_download_button(page: Any) -> Any | None:
     """Find the unique visible Download ZIP link or button inside the active modal."""
@@ -325,9 +395,11 @@ def _download_click(
     attempt = 1
     zip_button_clicked = False
     last_phase = ""
-    progress_reporter = _ProgressReporter()
-    global _ACTIVE_PROGRESS_REPORTER
-    _ACTIVE_PROGRESS_REPORTER = progress_reporter
+    progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if progress_reporter is None:
+        progress_reporter = _ProgressReporter()
+        globals()["_ACTIVE_PROGRESS_REPORTER"] = progress_reporter
+    report_stage("Starting download...", "info")
     _log(f"Preparing browser download; target directory: {target}")
     page.on("download", lambda download: download_events.append(download))
     _log("Registered browser download listener before clicking.")
@@ -338,6 +410,7 @@ def _download_click(
         _log(f"CLICK FAILED: {type(exc).__name__}: {exc}", started)
         raise
 
+    report_stage("Waiting for queue...", "info")
     _log(
         "Click call returned successfully. Monitoring Spotisaver's queue and waiting "
         "without a fixed download-event timeout.",
@@ -369,6 +442,10 @@ def _download_click(
                 queue_started = now
                 stated_delay = _queue_retry_seconds(snapshot)
                 delay_text = f" Website retry instruction: {stated_delay}s." if stated_delay else ""
+                report_stage(
+                    f"Queue busy. Retrying in {queue_retry_wait_ms / 1000:.0f} seconds.",
+                    "warning",
+                )
                 _log(
                     f"Spotisaver rejected attempt {attempt}: all download slots are busy."
                     f"{delay_text} Will close the queue modal and retry after "
@@ -451,6 +528,7 @@ def _download_click(
             # If the queue notice clears before the retry deadline, the normal
             # processing path below takes over and no retry is issued.
         elif queue_started is not None:
+            report_stage("Downloading...", "info")
             _log(
                 f"Spotisaver queue notice cleared during attempt {attempt}. "
                 "Continuing to monitor processing without another click.",
@@ -459,18 +537,25 @@ def _download_click(
             queue_started = None
 
         if snapshot:
-            progress_reporter.update(snapshot, started)
+            if not queue_busy:
+                progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
             combined_status = " ".join((status, snapshot.get("log", "")))
             if re.search(r"creating ZIP archive", combined_status, re.I):
                 phase = "creating ZIP archive"
             elif re.search(r"ZIP archive created", combined_status, re.I):
                 phase = "ZIP archive ready"
-            elif re.search(r"Downloaded\\s+\\d+\\s+of\\s+\\d+", status, re.I):
+            elif not queue_busy and _parse_track_progress(snapshot) is not None:
                 phase = "downloading playlist tracks"
             else:
                 phase = ""
             if phase and phase != last_phase:
+                if phase == "creating ZIP archive":
+                    report_stage("Preparing archive...", "info")
+                elif phase == "ZIP archive ready":
+                    report_stage("Archive ready. Downloading...", "success")
+                elif phase == "downloading playlist tracks":
+                    report_stage("Downloading...", "info")
                 _log(f"Spotisaver phase: {phase}.", started)
                 last_phase = phase
             last_snapshot = snapshot
@@ -678,11 +763,13 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
     url = SPOTISAVER_ALBUM_URL.format(album_id=album_id)
     _log(f"Workflow started for {plan.get('spotify_album_title', 'unknown album')!r}.", workflow_started)
     _log(f"Destination directory: {destination}", workflow_started)
+    report_stage("Opening browser...", "info")
     _log(f"Launching visible Chromium for {url}", workflow_started)
 
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
+            report_stage("Browser opened.", "success")
             _log("Visible Chromium launched successfully.", workflow_started)
             page = browser.new_page(accept_downloads=True)
             try:
@@ -783,7 +870,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
             f"{time.monotonic() - workflow_started:.1f}s: {exc}",
             workflow_started,
         )
-        traceback.print_exc()
+        _log(traceback.format_exc())
         raise RuntimeError(
             f"Spotisaver timed out during {stage} after "
             f"{time.monotonic() - workflow_started:.1f}s: {exc}"
@@ -807,8 +894,54 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
         raise RuntimeError(f"Spotisaver browser workflow failed during {stage}: {message}") from exc
 
 
-def download_and_import(plan: dict, work_dir: Path) -> list[Path]:
-    downloads = work_dir / "spotisaver-downloads"
-    downloads.mkdir(parents=True, exist_ok=True)
-    files = download_from_spotisaver(plan, downloads)
-    return import_audio_files(files, plan["tracks"], work_dir / "validated-tracks")
+def download_and_import(
+    plan: dict,
+    work_dir: Path,
+    *,
+    episode_number: int | None = None,
+) -> list[Path]:
+    """Download, validate, and import an album while retaining per-run diagnostics."""
+    global _ACTIVE_DIAGNOSTIC_LOGGER, _ACTIVE_PROGRESS_REPORTER
+    logger = None
+    log_path: Path | None = None
+    try:
+        logger, log_path = _create_diagnostic_logger(episode_number)
+        _ACTIVE_DIAGNOSTIC_LOGGER = logger
+        _ACTIVE_PROGRESS_REPORTER = _ProgressReporter()
+    except OSError as exc:
+        print(f"Diagnostic log unavailable: {exc}", flush=True)
+        _ACTIVE_DIAGNOSTIC_LOGGER = None
+        _ACTIVE_PROGRESS_REPORTER = _ProgressReporter()
+
+    try:
+        downloads = work_dir / "spotisaver-downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        files = download_from_spotisaver(plan, downloads)
+        if files and all(path.suffix.lower() == ".zip" for path in files):
+            report_stage("Archive downloaded. Validating tracks...", "info")
+        else:
+            report_stage("Downloads complete. Validating tracks...", "info")
+        tracks = import_audio_files(files, plan["tracks"], work_dir / "validated-tracks")
+        report_stage(f"All {len(tracks)} tracks validated.", "success")
+        return tracks
+    except KeyboardInterrupt:
+        _log("Download cancelled by user.")
+        report_stage("Download cancelled.", "warning")
+        raise
+    except Exception as exc:
+        _log(f"Run failed: {type(exc).__name__}: {exc}")
+        if logger is not None:
+            logger.exception("Spotisaver run failed")
+        if log_path is not None:
+            report_stage(f"Download failed: {type(exc).__name__}. Diagnostics: {log_path}", "error")
+            raise RuntimeError(f"Spotisaver download failed. Diagnostic log: {log_path}") from exc
+        report_stage(f"Download failed: {type(exc).__name__}.", "error")
+        raise RuntimeError(f"Spotisaver download failed ({type(exc).__name__}).") from exc
+    finally:
+        finish_console_output()
+        if logger is not None:
+            for handler in list(logger.handlers):
+                handler.flush()
+                handler.close()
+                logger.removeHandler(handler)
+        _ACTIVE_DIAGNOSTIC_LOGGER = None
