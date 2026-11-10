@@ -220,23 +220,30 @@ def _find_zip_download_button(page: Any) -> Any | None:
         pass
 
     # Fall back to the exact class observed in the supplied ready-card markup.
-    links = modal.first.locator(".zip-ready-card a.zrc-cta")
-    matches = []
-    for index in range(links.count()):
-        candidate = links.nth(index)
-        try:
-            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
-            href = candidate.get_attribute("href")
-            disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
-            if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
-                matches.append(candidate)
-        except Exception:
-            continue
-    if len(matches) > 1:
-        raise RuntimeError(f"Found {len(matches)} matching Download ZIP links in the active modal.")
-    if len(matches) == 1:
-        candidate = matches[0]
-        return candidate if candidate.is_visible() else None
+    try:
+        links = modal.first.locator(".zip-ready-card a.zrc-cta")
+        matches = []
+        for index in range(links.count()):
+            candidate = links.nth(index)
+            try:
+                label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+                href = candidate.get_attribute("href")
+                disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
+                if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
+                    matches.append(candidate)
+            except Exception:
+                continue
+        if len(matches) > 1:
+            raise RuntimeError(f"Found {len(matches)} matching Download ZIP links in the active modal.")
+        if len(matches) == 1:
+            candidate = matches[0]
+            return candidate if candidate.is_visible() else None
+    except RuntimeError:
+        raise
+    except Exception:
+        # Older page versions and test doubles may not expose the ready-card
+        # selector. Continue to the semantic button fallback in that case.
+        pass
 
     # Retain compatibility with a site version that renders a real button.
     try:
