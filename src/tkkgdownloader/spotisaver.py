@@ -110,6 +110,11 @@ def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logge
     handler = logging.FileHandler(path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(handler)
+    logger.info("Diagnostic log initialized for episode %s.", episode if episode_number is not None else "unknown")
+    for active_handler in logger.handlers:
+        active_handler.flush()
+    if not path.is_file():
+        raise OSError(f"Diagnostic log file was not created: {path}")
     return logger, path
 
 
