@@ -67,7 +67,7 @@ class TrackIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             archive = make_archive(root, [("Album/02 - TKKG Teil 01.mp3", b"audio")])
-            with self.assertRaisesRegex(RuntimeError, "uniquely match"):
+            with self.assertRaisesRegex(RuntimeError, "uniquely identify"):
                 import_audio_files([archive], expected("TKKG Teil 01"), root / "work")
 
     def test_rejects_colliding_canonical_titles(self):
