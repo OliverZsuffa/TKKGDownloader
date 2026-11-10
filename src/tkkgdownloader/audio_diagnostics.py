@@ -239,10 +239,17 @@ def _duration(probe: dict[str, Any]) -> float:
     return float(value) if value is not None else 0.0
 
 
-def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Path) -> tuple[list[dict[str, Any]], list[float]]:
+def _inspect_sources(
+    tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Path,
+    track_manifest: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[float]]:
     records: list[dict[str, Any]] = []
     durations: list[float] = []
+    manifest_entries = {
+        item["track_number"]: item for item in (track_manifest or {}).get("tracks", [])
+    }
     for index, path in enumerate(tracks, start=1):
+        mapping = manifest_entries.get(index, {})
         probe_error = None
         try:
             probe = _probe(path, ffprobe)
@@ -258,6 +265,15 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             "track_number": index,
             "title": path.stem.split(" - ", 1)[-1],
             "filename": path.name,
+            "source_mapping": {
+                "source_filename": mapping.get("source_filename"),
+                "matching_rule": mapping.get("matching_rule"),
+                "source_sha256": mapping.get("source_sha256"),
+                "canonical_sha256": mapping.get("canonical_sha256"),
+                "embedded_metadata": mapping.get("embedded_metadata"),
+                "metadata_status": mapping.get("metadata_status"),
+                "warnings": mapping.get("warnings", []),
+            } if mapping else None,
             "size_bytes": path.stat().st_size,
             "duration_seconds": duration,
             "probe_error": probe_error,
@@ -303,6 +319,13 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
     reports.mkdir(parents=True, exist_ok=True)
     (reports / "source-inspection.json").write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
     lines = ["Source inspection", ""]
+    if track_manifest:
+        lines.extend([
+            f"Track mapping status: {track_manifest.get('status', 'unknown')}",
+            f"Track manifest entries: {len(track_manifest.get('tracks', []))}",
+            f"Track mapping warnings: {len(track_manifest.get('warnings', []))}",
+            "",
+        ])
     for item in records:
         lines.append(
             f'{item["track_number"]:02d}. {item["filename"]} | {item["duration_seconds"]:.3f}s | '
@@ -402,9 +425,14 @@ def _make_boundaries(
 def run_episode_diagnostics(
     episode: Any, plan: dict[str, Any], tracks: list[Path], workspace: Path,
     *, ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe",
+    track_manifest: dict[str, Any] | None = None,
 ) -> Path:
     """Preserve source files and build validated comparison candidates and reports."""
-    tracks = sorted(tracks, key=lambda item: int(item.stem.split(" - ", 1)[0]))
+    from .audio_import import serializable_manifest, validate_track_manifest
+    if track_manifest is not None:
+        tracks = validate_track_manifest(tracks, track_manifest)
+    else:
+        tracks = sorted(tracks, key=lambda item: int(item.stem.split(" - ", 1)[0]))
     if len(tracks) != plan["track_count"]:
         raise RuntimeError(f"Expected {plan['track_count']} canonical tracks, received {len(tracks)}.")
     if [int(path.stem.split(" - ", 1)[0]) for path in tracks] != list(range(1, len(tracks) + 1)):
@@ -421,8 +449,21 @@ def run_episode_diagnostics(
     for folder in (reports, pcm_dir, candidates, review, artwork_dir):
         folder.mkdir(parents=True, exist_ok=True)
 
+    manifest_summary = None
+    if track_manifest is not None:
+        manifest_summary = {
+            "status": track_manifest.get("status"),
+            "track_count": track_manifest.get("track_count"),
+            "warning_count": len(track_manifest.get("warnings", [])),
+        }
+        (reports / "track-manifest.json").write_text(
+            json.dumps(serializable_manifest(track_manifest), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
     versions = {"ffmpeg": _tool_version(ffmpeg), "ffprobe": _tool_version(ffprobe)}
-    source_records, durations = _inspect_sources(tracks, ffmpeg, ffprobe, reports)
+    source_records, durations = _inspect_sources(
+        tracks, ffmpeg, ffprobe, reports, track_manifest=track_manifest
+    )
     failed = [
         item for item in source_records
         if item["decode_returncode"] != 0 or item["probe_error"] is not None
@@ -432,6 +473,7 @@ def run_episode_diagnostics(
             "episode": {"number": episode.number, "title": episode.title},
             "status": "source_validation_failed",
             "track_count": len(tracks),
+            "track_manifest": manifest_summary,
             "tool_versions": versions,
             "source_failures": [
                 {
@@ -550,6 +592,7 @@ def run_episode_diagnostics(
     comparison = {
         "episode": {"number": episode.number, "title": episode.title},
         "track_count": len(tracks),
+        "track_manifest": manifest_summary,
         "tool_versions": versions,
         "spotisaver_log": spotisaver_log,
         "source_formats": [
