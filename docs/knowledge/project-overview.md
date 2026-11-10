@@ -17,20 +17,19 @@ TKKGDownloader is a read only consumer. It does not scrape sources, search Spoti
 
 1. Fetch and validate the TKKGData dataset and schema version.
 2. Resolve the requested episode number and official title.
-3. Validate its verified Spotify album, YouTube Music playlist, and ordered individual track pairings.
-4. Prefer the YouTube Music playlist paired with the Spotify album.
-5. If playlist download fails or no playlist is available, use the exact individual YouTube Music song and Spotify track URL pairs.
-6. Validate the downloaded track count, numbering, and album folder.
-7. Ask for confirmation unless `--yes` was supplied.
+3. Validate its verified Spotify album and ordered individual track mappings.
+4. Use the default yt-dlp provider with exact verified YouTube Music video URLs, or explicitly select the Spotisaver browser provider.
+5. For Spotisaver, open one album in visible Chromium, verify its identity and tracklist, and use normal website download controls.
+6. Validate every downloaded MP3 against the expected track titles and order.
+7. Ask for confirmation unless --yes was supplied.
 8. Merge the episode parts into one MP3 with FFmpeg.
 
-The dataset's `tracks` array describes episode chapter segmentation. It is not the provider album track list. Download completeness comes from the verified `audio_release` mapping.
+Spotisaver mode is intentionally restricted to one episode per invocation. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.
 
 ## Intended environment
 
 - Windows and PowerShell
 - Python 3.11 or later
 - yt-dlp (installed through the project dependency)
+- Playwright and its Chromium browser for Spotisaver mode
 - FFmpeg
-
-Install the project with `py -m pip install -e .`. FFmpeg must also be installed and available on PATH. The downloader uses yt-dlp directly with exact verified YouTube Music video URLs from TKKGData.
