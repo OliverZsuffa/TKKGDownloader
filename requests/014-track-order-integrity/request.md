@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved and implemented in PR #21. All automated CI checks passed. Merge is pending.
+Implemented and merged in PR #21. Squash merge commit: 6e4632a492e403c047fd191976ac00f08d7394a0. All automated CI checks passed.
 
 ## Objective
 
