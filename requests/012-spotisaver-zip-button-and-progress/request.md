@@ -10,7 +10,7 @@ Complete the Spotisaver album workflow after the website finishes preparing its 
 
 ## User experience
 
-After the playlist has been processed, Spotisaver displays a final `Download ZIP` button in the existing modal. The downloader must click this visible button to trigger the actual browser download. The browser download event is not expected when the playlist processing finishes; it is expected only after the ZIP button is clicked.
+After the playlist has been processed, Spotisaver displays a final `Download ZIP` button in the existing modal. The downloader must click this visible button to trigger the actual browser download. The browser download event is not expected when the playlist processing finishes; it is expected only after the ZIP control is clicked.
 
 While processing, show a concise progress line with the number of tracks downloaded, percentage, current status, and estimated remaining time when available. Keep detailed diagnostics available for troubleshooting without flooding the normal console output.
 
@@ -24,7 +24,7 @@ While processing, show a concise progress line with the number of tracks downloa
 - Recognise the final archive-ready state, including status text such as `ZIP archive created.`.
 - In that state, locate the visible, enabled button inside the active modal whose rendered accessible name or text is `Download ZIP`. Do not assume an exact selector until confirmed from the live page. Use robust role/text-based discovery scoped to the active modal, and log selector diagnostics if it cannot be found.
 - Click `Download ZIP` exactly once for each successfully created archive. Do not close the modal or re-click the original album button at this stage.
-- Keep the browser download event listener registered before the first album click and active through queue retries, processing, ZIP creation, and the final ZIP-button click. This prevents missing a fast download event.
+- Keep the browser download event listener registered before the first album click and active through queue retries, processing, ZIP creation, and the final ZIP-control click. This prevents missing a fast download event.
 - After clicking `Download ZIP`, wait for the browser download event without imposing an arbitrary short timeout. Save the file using the existing download handling and continue safe ZIP extraction and strict canonical track validation.
 - Do not report success merely because the status says the ZIP was created. Success requires the actual browser download event, a saved non-empty archive, successful validation of every expected track, and the existing merge checks.
 - Detect an explicit website failure state and unexpected page closure as before. If the archive-ready state appears but the ZIP button is missing, disabled, or cannot be clicked, fail with useful modal and control diagnostics rather than clicking an unrelated control.
@@ -76,14 +76,14 @@ Provide three complementary aspects of output:
 - [ ] Track count and percentage are displayed accurately when available.
 - [ ] Progress output remains concise and does not repeatedly print the full mini-log.
 - [ ] The final `ZIP archive created.` state is detected.
-- [ ] The visible, enabled `Download ZIP` control is found inside the active modal.
-- [ ] The final ZIP button is clicked exactly once after archive creation.
+- [ ] The visible, usable `Download ZIP` link or button is found inside the active modal.
+- [ ] The final ZIP control is clicked exactly once after archive creation.
 - [ ] The existing download listener catches the browser download event triggered by that final button.
 - [ ] No false success is reported before the archive is actually saved and validated.
 - [ ] Missing or ambiguous ZIP controls produce actionable diagnostics.
 - [ ] Queue retry behaviour from Request 011 remains unchanged.
 - [ ] Existing ZIP safety, exact track matching, and merge validation remain unchanged.
-- [ ] Unit tests cover ETA parsing, progress parsing, archive-ready detection, ZIP button discovery and click ordering, delayed download events, missing controls, and cancellation.
+- [ ] Unit tests cover ETA parsing, progress parsing, archive-ready detection, ZIP link or button discovery and click ordering, delayed download events, missing controls, and cancellation.
 - [ ] Compilation and full CI pass.
 
 ## Open questions
