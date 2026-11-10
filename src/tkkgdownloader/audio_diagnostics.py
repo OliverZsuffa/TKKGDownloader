@@ -234,7 +234,12 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
     records: list[dict[str, Any]] = []
     durations: list[float] = []
     for index, path in enumerate(tracks, start=1):
-        probe = _probe(path, ffprobe)
+        probe_error = None
+        try:
+            probe = _probe(path, ffprobe)
+        except Exception as exc:
+            probe = {}
+            probe_error = f"{type(exc).__name__}: {exc}"
         stream = _audio_stream(probe)
         decode = _decode(path, ffmpeg)
         duration = _duration(probe)
@@ -246,6 +251,7 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             "filename": path.name,
             "size_bytes": path.stat().st_size,
             "duration_seconds": duration,
+            "probe_error": probe_error,
             "codec": stream.get("codec_name"),
             "bit_rate": stream.get("bit_rate") or probe.get("format", {}).get("bit_rate"),
             "sample_rate": stream.get("sample_rate"),
@@ -408,11 +414,43 @@ def run_episode_diagnostics(
 
     versions = {"ffmpeg": _tool_version(ffmpeg), "ffprobe": _tool_version(ffprobe)}
     source_records, durations = _inspect_sources(tracks, ffmpeg, ffprobe, reports)
-    failed = [item for item in source_records if item["decode_returncode"] != 0]
+    failed = [
+        item for item in source_records
+        if item["decode_returncode"] != 0 or item["probe_error"] is not None
+    ]
     if failed:
+        failure_report = {
+            "episode": {"number": episode.number, "title": episode.title},
+            "status": "source_validation_failed",
+            "track_count": len(tracks),
+            "tool_versions": versions,
+            "source_failures": [
+                {
+                    "track": item["filename"],
+                    "probe_error": item["probe_error"],
+                    "decode_returncode": item["decode_returncode"],
+                    "decode_stderr": item["decode_stderr"],
+                }
+                for item in failed
+            ],
+            "candidates_generated": False,
+            "source_report": str(reports / "source-inspection.json"),
+            "conclusion": (
+                "One or more source files failed probing or full decoding. No merge candidates were generated. "
+                "All downloaded files and completed source diagnostics were retained."
+            ),
+        }
+        (reports / "merge-comparison.json").write_text(
+            json.dumps(failure_report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        (reports / "summary.txt").write_text(
+            failure_report["conclusion"] + "\\n"
+            + f"Source report: {reports / 'source-inspection.json'}\\n",
+            encoding="utf-8",
+        )
         raise RuntimeError(
-            "At least one source track failed a complete decode. All source files and reports were retained. "
-            f"See {reports / 'source-inspection.txt'}"
+            "At least one source track failed probing or a complete decode. "
+            "No candidates were generated. See reports/source-inspection.txt and merge-comparison.json."
         )
 
     artwork = _extract_artwork(tracks, artwork_dir)
