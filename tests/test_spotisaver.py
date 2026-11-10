@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import io
 import tempfile
+import time
+import warnings
 import unittest
 import zipfile
 from pathlib import Path
@@ -10,12 +12,11 @@ from pathlib import Path
 from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
 from tkkgdownloader.spotisaver import (
-    _album_title,
     _download_click,
     _find_album_download,
     _find_playlist_navigation,
     _log_selector_state,
-    _wait_for_album_data,
+    _wait_for_album_download,
 )
 
 
@@ -81,40 +82,11 @@ class SpotisaverImportTests(unittest.TestCase):
                 import_audio_files([archive], tracks(), root / "work")
 
 
-class SpotisaverPageWaitTests(unittest.TestCase):
-    def test_album_title_removes_episode_prefix(self):
-        self.assertEqual(
-            _album_title("150/Heiße Nächte im Dezember"),
-            "Heiße Nächte im Dezember",
-        )
-
-    def test_waits_for_album_and_all_track_titles(self):
-        class FakePage:
-            def __init__(self):
-                self.call = None
-
-            def wait_for_function(self, expression, *, arg, timeout):
-                self.call = (expression, arg, timeout)
-
-        page = FakePage()
-        plan = {
-            "spotify_album_title": "150/Heiße Nächte im Dezember",
-            "tracks": [
-                {"track_number": 1, "spotify_title": "TKKG 150 Teil 01"},
-                {"track_number": 2, "spotify_title": "TKKG 150 Teil 02"},
-            ],
-        }
-        _wait_for_album_data(page, plan)
-        self.assertIsNotNone(page.call)
-        self.assertEqual(page.call[1][0], "heienachteimdezember")
-        self.assertEqual(page.call[1][1], ["tkkg150teil01", "tkkg150teil02"])
-        self.assertEqual(page.call[2], 120_000)
-
-
 class FakeLocator:
     def __init__(self, label='', visible=True):
         self.label = label
         self.visible = visible
+        self.enabled = True
         self.first = self
 
     def count(self):
@@ -122,6 +94,9 @@ class FakeLocator:
 
     def is_visible(self):
         return self.visible
+
+    def is_enabled(self):
+        return self.enabled
 
     def inner_text(self, timeout=None):
         return self.label
@@ -144,6 +119,10 @@ class FakePage:
     def get_by_role(self, role, name):
         return FakeLocator('', visible=False)
 
+    def wait_for_timeout(self, timeout):
+        self.waited = getattr(self, 'waited', 0) + timeout
+        time.sleep(timeout / 1000)
+
 class SpotisaverDownloadControlTests(unittest.TestCase):
     def test_prefers_visible_entire_playlist_button(self):
         button = FakeLocator('Download entire playlist')
@@ -152,6 +131,34 @@ class SpotisaverDownloadControlTests(unittest.TestCase):
     def test_does_not_select_hidden_playlist_button(self):
         button = FakeLocator('Download entire playlist', visible=False)
         self.assertIsNone(_find_album_download(FakePage(direct=button)))
+
+    def test_rejects_disabled_download_button(self):
+        button = FakeLocator('Download entire playlist')
+        button.enabled = False
+        self.assertIsNone(_find_album_download(FakePage(direct=button)))
+
+    def test_polls_until_direct_button_becomes_visible(self):
+        class AppearingLocator(FakeLocator):
+            def __init__(self):
+                super().__init__('Download entire playlist', visible=False)
+                self.checks = 0
+
+            def is_visible(self):
+                self.checks += 1
+                self.visible = self.checks >= 3
+                return self.visible
+
+        button = AppearingLocator()
+        page = FakePage(direct=button)
+        result = _wait_for_album_download(page, timeout_ms=50, poll_interval_ms=1)
+        self.assertIs(result, button)
+        self.assertEqual(page.waited, 2)
+
+    def test_times_out_without_clicking_or_selecting_scroll_control(self):
+        page = FakePage(direct=FakeLocator('Download entire playlist', visible=False))
+        result = _wait_for_album_download(page, timeout_ms=2, poll_interval_ms=1)
+        self.assertIsNone(result)
+        self.assertEqual(page.waited, 2)
 
     def test_finds_scroll_control_only_as_fallback(self):
         button = FakeLocator('Download Playlist')
@@ -210,6 +217,14 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
         self.assertIn("visible=True", output.getvalue())
         self.assertIn("downloadAllBtn", output.getvalue())
         self.assertIn("Download entire playlist", output.getvalue())
+
+    def test_module_compiles_without_invalid_escape_warnings(self):
+        module_path = Path(__file__).parents[1] / "src" / "tkkgdownloader" / "spotisaver.py"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            compile(module_path.read_text(encoding="utf-8"), str(module_path), "exec")
+        syntax_warnings = [item for item in caught if issubclass(item.category, SyntaxWarning)]
+        self.assertEqual(syntax_warnings, [])
 
     def test_download_click_reports_and_saves_download(self):
         class FakeDownload:
