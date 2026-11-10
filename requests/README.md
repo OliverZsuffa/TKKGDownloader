@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [010: Wait for Spotisaver to start the browser download](010-spotisaver-wait-for-download-event/request.md) — keep Chromium open until the browser signals the download, with periodic progress and clean cancellation.
+
 - [009: Poll Spotisaver for the album download button](009-spotisaver-button-first-readiness/request.md) — poll the real download button every second, click immediately when ready, and preserve strict archive validation.
 
 - [008: Spotisaver diagnostic logging](008-spotisaver-diagnostic-logging/request.md) — add timestamped stage, selector, click, download-event, and file-save diagnostics.
