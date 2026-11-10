@@ -191,11 +191,19 @@ def download_episode_spotisaver(
         source_dir = workspace / "source"
         source_dir.mkdir()
         try:
-            tracks = download_and_import(plan, source_dir, episode_number=episode.number)
-            report_stage("Source tracks validated. Starting quality diagnostics...", "info")
+            manifest: dict = {}
+            tracks = download_and_import(
+                plan,
+                source_dir,
+                episode_number=episode.number,
+                episode_title=episode.title,
+                manifest_out=manifest,
+            )
+            report_stage("Source tracks and ordering validated. Starting quality diagnostics...", "info")
             from .audio_diagnostics import run_episode_diagnostics
             report = run_episode_diagnostics(
-                episode, plan, tracks, workspace, ffmpeg=ffmpeg, ffprobe=ffprobe
+                episode, plan, tracks, workspace, ffmpeg=ffmpeg, ffprobe=ffprobe,
+                track_manifest=manifest,
             )
             report_stage(f"Diagnostics complete. Report: {report}", "success")
             return report
@@ -214,9 +222,16 @@ def download_episode_spotisaver(
         raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
     try:
         with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_spotisaver_") as temp:
-            tracks = download_and_import(plan, Path(temp), episode_number=episode.number)
-            report_stage("Merging MP3...", "info")
-            merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
+            manifest: dict = {}
+            tracks = download_and_import(
+                plan,
+                Path(temp),
+                episode_number=episode.number,
+                episode_title=episode.title,
+                manifest_out=manifest,
+            )
+            report_stage("Track mapping verified. Merging MP3...", "info")
+            merge_tracks(tracks, final_path, ffmpeg=ffmpeg, manifest=manifest)
         report_stage(f"Done: {final_path}", "success")
         return final_path
     finally:
