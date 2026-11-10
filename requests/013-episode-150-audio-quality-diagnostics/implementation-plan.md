@@ -113,7 +113,7 @@ For every transition:
 - Include enough context on both sides to hear whether dialogue, music, or effects are cut off. Use a configurable default of approximately 8 to 10 seconds on each side, shortened only when a source track is itself shorter.
 - Label each excerpt with the two track numbers and the expected boundary timestamp in a companion text index.
 - Assemble the excerpts in transition order into one review WAV or another lossless format.
-- Analyse short-term silence, peak and mean RMS levels in the before and after excerpts. Treat these as flags for human review, not automatic repair instructions.
+- Analyse short-term silence, peak and RMS levels in the before and after excerpts. Treat these as flags for human review, not automatic repair instructions.
 
 Also provide a way to inspect the full source tracks independently. Missing audio can occur inside a track, not only at a chapter boundary.
 
