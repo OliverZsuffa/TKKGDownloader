@@ -7,4 +7,5 @@
 - Added visible Playwright browser provider, public album URL construction from TKKGData, album and track title checks, ZIP or sequential track downloads, safe archive extraction, exact filename matching, and one-episode CLI guard.
 - Added synthetic tests for ZIP import, ordering, missing track, traversal, corrupt archive, empty MP3, and provider selection.
 - Updated README and Knowledge Base.
-- CI has not yet been checked. Real Spotisaver behaviour and Windows playback remain unverified.
+- GitHub Actions passed project installation, Python compilation, the live TKKGData contract smoke test, and all 37 unit tests on commit 03fc8889c53bf95a5803ec7e19d49cb306d389de.
+- Real Spotisaver browser behaviour and Windows playback remain unverified. Real Spotisaver behaviour and Windows playback remain unverified.
