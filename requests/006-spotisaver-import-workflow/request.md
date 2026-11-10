@@ -61,7 +61,7 @@ Spotisaver mode accepts exactly one episode per invocation. There are no unatten
 - [x] Missing, duplicate, ambiguous, corrupt, empty, or unexpected files prevent merging.
 - [x] Existing FFmpeg merge and output safeguards are reused.
 - [x] Automated tests cover ZIP import, matching, path traversal, corrupt archives, empty tracks, and CLI selection.
-- [ ] CI passes.
+- [x] CI passes on commit 03fc8889c53bf95a5803ec7e19d49cb306d389de.
 - [ ] Oliver completes the first real Windows download and playback test for episode 150.
 
 ## Known limitation
