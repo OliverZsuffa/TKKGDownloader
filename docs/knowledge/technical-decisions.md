@@ -72,7 +72,7 @@ Create a lossless review excerpt around every track boundary and record its time
 
 ## 011. Require deterministic Spotisaver track identity and a verified import manifest
 
-Spotisaver track filenames must map to canonical TKKGData titles through exact matching after Unicode, case, diacritic, and punctuation normalisation. Partial and fuzzy matching are prohibited. A leading numeric filename prefix is accepted only when it equals the expected canonical track number. Canonical track numbers must be positive, unique, contiguous, and one-based. Ambiguous, missing, extra, empty, or byte-identical source tracks are rejected before merging.
+Spotisaver sources must map to canonical TKKGData tracks through deterministic evidence. Exact normalized filename titles are preferred, including explicitly recognised provider wrappers. Exact embedded ID3 title is a fallback. Embedded album identity together with a valid track number is a further fallback when the album exactly matches the verified TKKGData album title. Track number alone is never sufficient. Exact verified alternate titles may be accepted only when explicitly supplied by trusted upstream metadata. Partial and fuzzy matching are prohibited. A leading numeric filename prefix is accepted only when it equals the expected canonical track number. Canonical track numbers must be positive, unique, contiguous, and one-based. Ambiguous, missing, extra, empty, or byte-identical source tracks are rejected before merging.
 
 Build the complete one-to-one mapping before creating numbered copies. Record the source filename and relative path, canonical track number and title, matching rule, file size, SHA-256 checksums, and available embedded ID3 title, artist, album, track number, and disc number in a versioned manifest. Embedded metadata is corroborating evidence only. Missing or conflicting tags are warnings and never override TKKGData or cause automatic reordering.
 
@@ -80,3 +80,16 @@ Verify that each canonical copy has the same SHA-256 as its source. Immediately 
 
 Checksums establish byte identity and traceability, not semantic audio correctness or the editorial correctness of TKKGData's sequence. Audio diagnostics and human listening remain necessary for those questions. Do not automatically reorder or repair audio based on tags, durations, fingerprints, or heuristics.
 
+
+
+## 012. Use layered deterministic evidence for Spotisaver source identity
+
+Resolve each source in this order: exact normalized filename title, exact normalized filename after removing known provider wrappers, exact embedded ID3 title, then exact embedded album identity together with the expected track number. The current known Spotisaver wrapper is a leading `TKKG - ` and trailing ` (SPOTISAVER)`. Do not strip arbitrary words or provider labels.
+
+Track records may expose an `alternate_titles` list. Treat each alias as an exact title key and apply the same collision checks as the canonical title. Do not invent aliases or infer them from fuzzy similarity.
+
+The album and track metadata fallback requires both an exact normalized album match against the verified album title and a valid embedded track number. Track number alone is insufficient. If metadata is absent, malformed, contradictory, or does not establish a unique one-to-one mapping, reject the import.
+
+Record the matching method, evidence type, and matched title key in the manifest. Keep fuzzy similarity strictly diagnostic only. It may be used to explain likely candidates in a future interactive review workflow, but never to assign a source automatically.
+
+At logger startup, create the persistent diagnostic file, write and flush an initialization record, and verify that the file exists before starting the browser. If this fails, report the actual filesystem error and do not claim that a log exists.
