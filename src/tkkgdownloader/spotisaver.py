@@ -115,9 +115,6 @@ def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logge
 
 def _log(message: str, started: float | None = None) -> None:
     """Write browser and workflow diagnostics to the persistent run log only."""
-    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
-    if reporter is not None:
-        reporter.finish()
     logger = globals().get("_ACTIVE_DIAGNOSTIC_LOGGER")
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
     elapsed = f" +{time.monotonic() - started:.1f}s" if started is not None else ""
@@ -919,7 +916,10 @@ def download_and_import(
         downloads = work_dir / "spotisaver-downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         files = download_from_spotisaver(plan, downloads)
-        report_stage("Archive downloaded. Validating tracks...", "info")
+        if files and all(path.suffix.lower() == ".zip" for path in files):
+            report_stage("Archive downloaded. Validating tracks...", "info")
+        else:
+            report_stage("Downloads complete. Validating tracks...", "info")
         tracks = import_audio_files(files, plan["tracks"], work_dir / "validated-tracks")
         report_stage(f"All {len(tracks)} tracks validated.", "success")
         return tracks
