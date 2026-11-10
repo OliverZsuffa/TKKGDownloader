@@ -1,6 +1,6 @@
 # R17 implementation notes
 
-Implementation is in progress on branch `r17-download-polish-metadata`.
+Implementation is complete on branch `r17-download-polish-metadata` and is available in [pull request #24](https://github.com/OliverZsuffa/TKKGDownloader/pull/24).
 
 ## Changes
 
@@ -13,4 +13,4 @@ Implementation is in progress on branch `r17-download-polish-metadata`.
 
 ## Verification
 
-Pending automated test suite and CI results.
+- Python compilation passed.\n- TKKGData contract smoke test passed.\n- All 112 unit and integration tests passed, including FFmpeg integration tests.\n- GitHub Actions run 42905743453 completed successfully.\n- An initial test run exposed five test failures. The implementation and tests were corrected, and the latest run passed.\n\n## Remaining verification\n\nA fresh real Spotisaver download is still required to confirm the source artwork and final output in the live workflow. The PR has not been merged.
