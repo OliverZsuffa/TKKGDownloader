@@ -79,7 +79,7 @@ def _read_download_modal(page: Any) -> dict[str, str]:
                     .filter(Boolean).join(" ")
                 : "";
             const retryControls = Array.from(
-                document.querySelectorAll("#downloadModal button, #downloadModal a")
+                document.querySelectorAll(".modal.show button, .modal.show a")
             ).filter((element) => {
                 const style = window.getComputedStyle(element);
                 return style.display !== "none" && style.visibility !== "hidden";
@@ -105,7 +105,7 @@ def _queue_retry_seconds(snapshot: dict[str, str]) -> int | None:
     if not re.search(r"all download slots are busy|slots are busy", text, re.I):
         return None
     match = re.search(
-        r"try again in\\s+(\\d+)\\s*(sec(?:ond)?s?|min(?:ute)?s?)",
+        r"try again in\s+(\d+)\s*(sec(?:ond)?s?|min(?:ute)?s?)",
         text,
         re.I,
     )
