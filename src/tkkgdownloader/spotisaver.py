@@ -286,7 +286,7 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
             minutes = int(raw_minutes or "0")
             seconds = int(raw_seconds)
         else:
-            match = re.search(r"(?:(\\d+)\\s*m(?:in)?\\s*)?(\\d+)\\s*s(?:ec)?", snapshot.get("eta", ""), re.I)
+            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", snapshot.get("eta", ""), re.I)
             if not match:
                 return None
             minutes = int(match.group(1) or "0")
