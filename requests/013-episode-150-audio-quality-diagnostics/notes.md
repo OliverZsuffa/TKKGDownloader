@@ -33,7 +33,7 @@ PR #20 was squash merged into main as 118163169a30ddaf560980f3e35f2a2ecb18cd4d. 
 Run on Oliver's Windows machine with a new empty diagnostic directory:
 
 ```powershell
-py tkkg.py 150 --provider spotisaver --diagnostic-dir "D:\\TKKG\\episode-150-diagnostics"
+py tkkg.py 150 --provider spotisaver --diagnostic-dir "D:\TKKG\episode-150-diagnostics"
 ```
 
 The real download, the 40 source files, the artwork actually present in those files, the full episode comparison, and listening to all 39 boundaries have not yet been verified. Do not delete the diagnostic workspace or replace the existing episode MP3 until the results have been reviewed.
