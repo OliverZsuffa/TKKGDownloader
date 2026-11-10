@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import tempfile
 import time
 import warnings
@@ -14,6 +15,8 @@ from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
 from tkkgdownloader.spotisaver import (
     _download_click,
+    _ProgressReporter,
+    _render_progress_bar,
     _download_failure,
     _queue_retry_seconds,
     _find_album_download,
@@ -217,9 +220,7 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             count = _log_selector_state(DiagnosticPage(), "#downloadAllBtn")
         self.assertEqual(count, 1)
-        self.assertIn("visible=True", output.getvalue())
-        self.assertIn("downloadAllBtn", output.getvalue())
-        self.assertIn("Download entire playlist", output.getvalue())
+        self.assertEqual(output.getvalue(), "")
 
     def test_module_compiles_without_invalid_escape_warnings(self):
         module_path = Path(__file__).parents[1] / "src" / "tkkgdownloader" / "spotisaver.py"
@@ -281,9 +282,11 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertTrue(locator.assert_listener_registered)
             self.assertEqual(result.name, "album.zip")
             self.assertEqual(result.read_bytes(), b"archive")
-            self.assertIn("Registered browser download listener before clicking", output.getvalue())
-            self.assertIn("Browser download event received", output.getvalue())
-            self.assertIn("Saved file size: 7 bytes", output.getvalue())
+            self.assertIn("Starting download...", output.getvalue())
+            self.assertIn("Waiting for queue...", output.getvalue())
+            self.assertNotIn("Browser download event received", output.getvalue())
+            self.assertNotIn("album.zip", output.getvalue())
+            self.assertNotIn("Saved file size", output.getvalue())
 
     def test_download_click_waits_through_queue_notice_without_second_click(self):
         class FakeDownload:
@@ -344,10 +347,11 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertEqual(locator.clicked, 1)
             self.assertEqual(page.waited, 3)
             self.assertEqual(result.name, "album.zip")
-            self.assertIn("rejected attempt 1", output.getvalue())
-            self.assertIn("Website retry instruction: 25s", output.getvalue())
-            self.assertIn("queue notice cleared", output.getvalue())
-            self.assertNotIn("Closing the visible modal", output.getvalue())
+            self.assertIn("Queue busy. Retrying in 30 seconds.", output.getvalue())
+            self.assertIn("Downloading...", output.getvalue())
+            self.assertNotIn("rejected attempt", output.getvalue())
+            self.assertNotIn("Website retry instruction", output.getvalue())
+            self.assertNotIn("queue notice cleared", output.getvalue())
 
     def test_queue_retry_delay_parser(self):
         snapshot = {
@@ -541,9 +545,10 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
         self.assertEqual(page.album_clicks, 2)
         self.assertEqual(page.close_clicks, 1)
         self.assertEqual(result.name, "album.zip")
-        self.assertIn("Confirmed that the queue modal is closed", output.getvalue())
-        self.assertIn("Submitting Spotisaver download attempt 2", output.getvalue())
-        self.assertIn("Browser download event received during attempt 2", output.getvalue())
+        self.assertIn("Queue busy. Retrying in 30 seconds.", output.getvalue())
+        self.assertIn("Downloading...", output.getvalue())
+        self.assertNotIn("Submitting Spotisaver download attempt", output.getvalue())
+        self.assertNotIn("Browser download event received", output.getvalue())
 
     def test_generic_stall_does_not_trigger_retry(self):
         class FakeDownload:
@@ -590,6 +595,72 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             result = _download_click(page, Button(page), Path(temp), queue_retry_wait_ms=0)
         self.assertEqual(page.clicked, 1)
         self.assertEqual(result.name, "album.zip")
+
+
+class SpotisaverConsoleTests(unittest.TestCase):
+    def test_progress_line_uses_track_count_and_eta(self):
+        snapshot = {
+            "status": "Downloaded 8 of 40 tracks",
+            "progress": "20%",
+            "eta_minutes": "5",
+            "eta_seconds": "20",
+        }
+        line = _render_progress_bar(snapshot)
+        self.assertIn("8/40 tracks", line)
+        self.assertIn("20%", line)
+        self.assertIn("ETA 5m 20s", line)
+
+    def test_progress_fallback_does_not_mislabel_percentage_as_track_count(self):
+        snapshot = {
+            "status": "Downloading playlist",
+            "progress": "20%",
+            "eta_minutes": "",
+            "eta_seconds": "",
+        }
+        line = _render_progress_bar(snapshot)
+        self.assertIn("20%", line)
+        self.assertNotIn("20/100 tracks", line)
+        self.assertNotIn("ETA", line)
+
+    def test_missing_eta_is_not_retained(self):
+        first = {"status": "Downloaded 8 of 40 tracks", "progress": "20%", "eta_minutes": "5", "eta_seconds": "20"}
+        second = {"status": "Downloaded 9 of 40 tracks", "progress": "22%", "eta_minutes": "", "eta_seconds": ""}
+        self.assertIn("ETA 5m 20s", _render_progress_bar(first))
+        self.assertNotIn("ETA", _render_progress_bar(second))
+
+    def test_no_color_environment_disables_ansi(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        stream = TTY()
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            with contextlib.redirect_stdout(stream):
+                reporter = _ProgressReporter()
+                reporter.stage("Queue busy.", "warning")
+        self.assertEqual(stream.getvalue(), "Queue busy.\\n")
+
+    def test_noninteractive_output_disables_ansi(self):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            reporter = _ProgressReporter()
+            reporter.stage("Browser opened.", "success")
+        self.assertEqual(stream.getvalue(), "Browser opened.\\n")
+
+    def test_interactive_stage_uses_semantic_colour(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        stream = TTY()
+        with patch.dict(os.environ, {"TERM": "xterm-256color"}, clear=False):
+            with patch.dict(os.environ, {"NO_COLOR": ""}):
+                with contextlib.redirect_stdout(stream):
+                    reporter = _ProgressReporter()
+                    reporter.stage("Queue busy.", "warning")
+        self.assertIn("\\033[33m", stream.getvalue())
+        self.assertIn("Queue busy.", stream.getvalue())
+        self.assertIn("\\033[0m", stream.getvalue())
 
 
 if __name__ == "__main__":
