@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
+from tkkgdownloader.spotisaver import _album_title, _wait_for_album_data
 
 
 def tracks():
@@ -69,6 +70,36 @@ class SpotisaverImportTests(unittest.TestCase):
                 zipped.writestr("TKKG 150 Teil 02.mp3", b"second")
             with self.assertRaisesRegex(RuntimeError, "empty"):
                 import_audio_files([archive], tracks(), root / "work")
+
+
+class SpotisaverPageWaitTests(unittest.TestCase):
+    def test_album_title_removes_episode_prefix(self):
+        self.assertEqual(
+            _album_title("150/Heiße Nächte im Dezember"),
+            "Heiße Nächte im Dezember",
+        )
+
+    def test_waits_for_album_and_all_track_titles(self):
+        class FakePage:
+            def __init__(self):
+                self.call = None
+
+            def wait_for_function(self, expression, *, arg, timeout):
+                self.call = (expression, arg, timeout)
+
+        page = FakePage()
+        plan = {
+            "spotify_album_title": "150/Heiße Nächte im Dezember",
+            "tracks": [
+                {"track_number": 1, "spotify_title": "TKKG 150 Teil 01"},
+                {"track_number": 2, "spotify_title": "TKKG 150 Teil 02"},
+            ],
+        }
+        _wait_for_album_data(page, plan)
+        self.assertIsNotNone(page.call)
+        self.assertEqual(page.call[1][0], "heißenächteimdezem" if False else "heißenächteimdezember")
+        self.assertEqual(page.call[1][1], ["tkkg150teil01", "tkkg150teil02"])
+        self.assertEqual(page.call[2], 120_000)
 
 
 class SpotisaverCliTests(unittest.TestCase):
