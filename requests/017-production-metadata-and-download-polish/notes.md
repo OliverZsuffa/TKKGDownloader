@@ -13,4 +13,12 @@ Implementation is complete on branch `r17-download-polish-metadata` and is avail
 
 ## Verification
 
-- Python compilation passed.\n- TKKGData contract smoke test passed.\n- All 112 unit and integration tests passed, including FFmpeg integration tests.\n- GitHub Actions run 42905743453 completed successfully.\n- An initial test run exposed five test failures. The implementation and tests were corrected, and the latest run passed.\n\n## Remaining verification\n\nA fresh real Spotisaver download is still required to confirm the source artwork and final output in the live workflow. The PR has not been merged.
+- Python compilation passed.
+- TKKGData contract smoke test passed.
+- All 112 unit and integration tests passed, including FFmpeg integration tests.
+- GitHub Actions run 42905743453 completed successfully.
+- An initial test run exposed five test failures. The implementation and tests were corrected, and the latest run passed.
+
+## Remaining verification
+
+A fresh real Spotisaver download is still required to confirm the source artwork and final output in the live workflow. The PR has not been merged.
