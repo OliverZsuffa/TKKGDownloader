@@ -47,7 +47,7 @@ class _ProgressReporter:
         self.colour = (
             self.interactive
             and os.environ.get("TERM", "").lower() != "dumb"
-            and "NO_COLOR" not in os.environ
+            and not os.environ.get("NO_COLOR")
         )
         self.active_line = False
         self.last_line: str | None = None
