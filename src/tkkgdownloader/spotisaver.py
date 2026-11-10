@@ -178,26 +178,64 @@ def _download_click(page: Any, locator: Any, target: Path, timeout_ms: int) -> P
 
 
 def _find_album_download(page: Any) -> Any | None:
-    """Find the real album download control, preferring Spotisaver's stable ID."""
+    """Find Spotisaver's actual full-playlist button, never the scroll control."""
     direct = page.locator("#downloadAllBtn")
-    if direct.count() and direct.first.is_visible():
-        label = direct.first.inner_text(timeout=3_000).strip()
-        if re.search(r"download\s+entire\s+playlist", label, re.I):
-            return direct.first
-
-    patterns = re.compile(
-        r"(download\s*(all|album|playlist|zip)|album\s*download|download\s*as\s*zip)",
-        re.I,
-    )
-    for role in ("button", "link"):
-        locator = page.get_by_role(role, name=patterns)
-        for index in range(locator.count()):
-            candidate = locator.nth(index)
-            if candidate.is_visible():
-                label = candidate.inner_text(timeout=3_000).strip()
-                if "download playlist" not in label.lower():
-                    return candidate
+    if not direct.count():
+        return None
+    candidate = direct.first
+    if not candidate.is_visible() or not candidate.is_enabled():
+        return None
+    label = candidate.inner_text(timeout=3_000).strip()
+    if re.search(r"download\\s+entire\\s+playlist", label, re.I):
+        return candidate
     return None
+
+
+def _wait_for_album_download(
+    page: Any,
+    *,
+    timeout_ms: int = 120_000,
+    poll_interval_ms: int = 1_000,
+) -> Any | None:
+    """Poll for the real album download button until it is ready or time expires."""
+    started = time.monotonic()
+    next_status = 10.0
+    _log(
+        f"Polling for visible, enabled #downloadAllBtn every "
+        f"{poll_interval_ms / 1000:.1f}s (timeout {timeout_ms / 1000:.0f}s)..."
+    )
+    while True:
+        candidate = _find_album_download(page)
+        if candidate is not None:
+            elapsed = time.monotonic() - started
+            _log(f"Album download button is ready after {elapsed:.1f}s.")
+            return candidate
+
+        elapsed = time.monotonic() - started
+        remaining_ms = timeout_ms - int(elapsed * 1000)
+        if remaining_ms <= 0:
+            _log(f"Album download button did not become ready within {timeout_ms / 1000:.0f}s.")
+            return None
+
+        if elapsed >= next_status:
+            _log(f"Still waiting for #downloadAllBtn ({elapsed:.0f}s elapsed).")
+            next_status += 10.0
+
+        page.wait_for_timeout(min(poll_interval_ms, remaining_ms))
+
+
+def _log_page_snapshot(page: Any) -> None:
+    """Capture useful page context when the expected download control never appears."""
+    try:
+        _log(f"Page title: {page.title()!r}")
+    except Exception as exc:
+        _log(f"Could not read page title: {type(exc).__name__}: {exc}")
+    try:
+        body = page.locator("body").inner_text(timeout=3_000)
+        preview = re.sub(r"\\s+", " ", body).strip()[:1_200]
+        _log(f"Page text preview: {preview!r}")
+    except Exception as exc:
+        _log(f"Could not read page text: {type(exc).__name__}: {exc}")
 
 
 def _find_playlist_navigation(page: Any) -> Any | None:
@@ -215,9 +253,9 @@ def _find_playlist_navigation(page: Any) -> Any | None:
 def _log_visible_download_controls(page: Any) -> None:
     """Print a compact diagnostic list of visible buttons and links."""
     controls = page.locator("button:visible, a:visible").evaluate_all(
-        """elements => elements.slice(0, 30).map(element => ({
+        r"""elements => elements.slice(0, 30).map(element => ({
             tag: element.tagName.toLowerCase(),
-            text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
+            text: (element.innerText || element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 100),
             id: element.id || "",
             title: element.getAttribute("title") || "",
             aria: element.getAttribute("aria-label") || "",
@@ -289,52 +327,50 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                 page.locator("body").wait_for(state="visible", timeout=30_000)
                 _log("Document body is visible.", workflow_started)
 
-                stage = "album data loading"
-                _wait_for_album_data(page, plan, timeout_ms=timeout_ms)
-                stage = "album verification"
-                _verify_album_page(page, plan)
-
-                stage = "download control discovery"
-                _log("Inspecting the direct album download control first.", workflow_started)
+                stage = "album download button polling"
                 _log_selector_state(page, "#downloadAllBtn")
-                _log_selector_state(page, "#downloadAllBtnLabel")
-                album_download = _find_album_download(page)
-                if album_download is not None:
-                    label = album_download.inner_text(timeout=3_000).strip()
+                album_download = _wait_for_album_download(
+                    page,
+                    timeout_ms=timeout_ms,
+                    poll_interval_ms=1_000,
+                )
+
+                if album_download is None:
+                    stage = "download control diagnostics"
                     _log(
-                        f"DIRECT-FIRST DECISION: actual album download control is visible "
-                        f"({label!r}); clicking it without scrolling.",
+                        "The full-playlist button did not appear during polling. "
+                        "Capturing page state before trying the site's scroll control.",
                         workflow_started,
                     )
-                else:
-                    _log(
-                        "DIRECT-FIRST DECISION: no verified visible album download control. "
-                        "Checking the intermediate navigation control.",
-                        workflow_started,
-                    )
-                    _log_selector_state(page, "button.btn-playlist-download")
+                    _log_selector_state(page, "#downloadAllBtn")
+                    _log_selector_state(page, "#downloadAllBtnLabel")
+                    _log_page_snapshot(page)
+                    _log_visible_download_controls(page)
+
                     navigation = _find_playlist_navigation(page)
                     if navigation is not None:
                         nav_label = navigation.inner_text(timeout=3_000).strip()
                         _log(
                             f"Clicking intermediate navigation control {nav_label!r}; "
-                            "this is only used to reveal the action area.",
+                            "this is only used after the normal polling period expires.",
                             workflow_started,
                         )
                         navigation.click()
-                        _log("Intermediate navigation click returned; waiting for actual action.", workflow_started)
-                        try:
-                            page.locator("#downloadAllBtn").wait_for(
-                                state="visible",
-                                timeout=min(timeout_ms, 15_000),
-                            )
-                            _log("The direct album download button became visible after navigation.", workflow_started)
-                        except PlaywrightTimeoutError:
-                            _log("Timed out waiting for #downloadAllBtn after navigation.", workflow_started)
-                        _log_selector_state(page, "#downloadAllBtn")
-                        album_download = _find_album_download(page)
+                        _log("Intermediate navigation click returned; polling for the actual button for 15s.", workflow_started)
+                        album_download = _wait_for_album_download(
+                            page,
+                            timeout_ms=15_000,
+                            poll_interval_ms=1_000,
+                        )
                     else:
                         _log("No usable intermediate navigation control was found.", workflow_started)
+
+                if album_download is not None:
+                    _log(
+                        "The verified #downloadAllBtn control is ready. "
+                        "Clicking directly without scrolling.",
+                        workflow_started,
+                    )
 
                 if album_download is not None:
                     label = album_download.inner_text(timeout=3_000).strip()
