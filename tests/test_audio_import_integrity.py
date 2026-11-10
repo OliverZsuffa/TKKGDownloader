@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from tkkgdownloader.audio_import import (
     serializable_manifest,
     validate_track_manifest,
 )
+from tkkgdownloader.merger import merge_tracks
 
 
 def make_archive(root: Path, names_and_data: list[tuple[str, bytes]]) -> Path:
@@ -160,6 +162,20 @@ class TrackIdentityTests(unittest.TestCase):
             result[0].write_bytes(b"modified")
             with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
                 validate_track_manifest(result, manifest)
+
+    def test_merger_rejects_tampered_manifest_input_before_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = make_archive(root, [("Teil 1.mp3", b"original")])
+            manifest: dict = {}
+            result = import_audio_files(
+                [archive], expected("Teil 1"), root / "work", manifest_out=manifest
+            )
+            result[0].write_bytes(b"tampered")
+            with patch("tkkgdownloader.merger.subprocess.run") as run:
+                with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
+                    merge_tracks(result, root / "output.mp3", manifest=manifest)
+                run.assert_not_called()
 
     def test_manifest_rejects_wrong_order_before_merge(self):
         with tempfile.TemporaryDirectory() as temp:
