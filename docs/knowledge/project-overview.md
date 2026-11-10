@@ -19,7 +19,7 @@ TKKGDownloader is a read only consumer. It does not scrape sources, search Spoti
 2. Resolve the requested episode number and official title.
 3. Validate its verified Spotify album and ordered individual track mappings.
 4. Use the default yt-dlp provider with exact verified YouTube Music video URLs, or explicitly select the Spotisaver browser provider.
-5. For Spotisaver, open one album in visible Chromium, verify its identity and tracklist, and use normal website download controls.
+5. For Spotisaver, open one canonical album in visible Chromium, poll for the real album download button, and use normal website download controls.
 6. Validate every downloaded MP3 against the expected track titles and order.
 7. Ask for confirmation unless --yes was supplied.
 8. Merge the episode parts into one MP3 with FFmpeg.
