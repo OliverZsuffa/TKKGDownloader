@@ -141,11 +141,11 @@ class DownloaderSourceTests(unittest.TestCase):
              patch("tkkgdownloader.downloader.subprocess.run", return_value=completed), \
              patch("builtins.input", side_effect=AssertionError("Merge must not ask for confirmation")):
             result = download_episode_spotisaver(episode, Path(temp_dir))
+            self.assertTrue(result.is_file())
+            self.assertEqual(len(merge.call_args.args[0]), 2)
+            finalize.assert_called_once()
 
         self.assertTrue(result.name.startswith("TKKG 149"))
-        self.assertTrue(result.is_file())
-        self.assertEqual(len(merge.call_args.args[0]), 2)
-        finalize.assert_called_once()
 
     def test_metadata_failure_preserves_existing_output(self):
         episode = Episode(149, "Tims gefährlichster Gegner", audio_release())
