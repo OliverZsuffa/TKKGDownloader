@@ -96,7 +96,7 @@ def _extract_artwork(tracks: list[Path], artwork_dir: Path) -> dict[str, Any]:
     chosen: dict[str, Any] | None = None
     saved_hashes: set[str] = set()
     for path in tracks:
-        for picture in _id3(path).getall("APIC"):
+        for picture_index, picture in enumerate(_id3(path).getall("APIC"), start=1):
             data = bytes(picture.data)
             if not data:
                 continue
@@ -114,7 +114,10 @@ def _extract_artwork(tracks: list[Path], artwork_dir: Path) -> dict[str, Any]:
             }
             if digest not in saved_hashes:
                 extension = {"image/jpeg": ".jpg", "image/png": ".png"}.get(mime, ".img")
-                target = artwork_dir / f"cover-source-track-{int(path.stem.split(' - ', 1)[0]):02d}{extension}"
+                target = artwork_dir / (
+                    f"cover-source-track-{int(path.stem.split(' - ', 1)[0]):02d}-"
+                    f"{picture_index:02d}{extension}"
+                )
                 target.write_bytes(data)
                 record["path"] = str(target)
                 saved_hashes.add(digest)
@@ -226,8 +229,11 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             "channels": stream.get("channels"),
             "channel_layout": stream.get("channel_layout"),
             "start_time": stream.get("start_time"),
+            "decode_command": decode["command"],
             "decode_returncode": decode["returncode"],
             "decode_stderr": decode["stderr"],
+            "silence_command": silence["command"],
+            "silence_returncode": silence["returncode"],
             "silence_diagnostic": silence["stderr"],
             "probe": probe,
         }
