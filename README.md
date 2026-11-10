@@ -61,13 +61,13 @@ Get help:
 
 TKKGDownloader fetches the published TKKGData episode array and its dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
 
-The dataset contains a verified Spotify album URL and, where available, a verified YouTube Music playlist URL. It also stores exact Spotify track URLs paired with individual YouTube Music song URLs. The downloader prefers the verified playlist and Spotify album pairing. If that path fails or the playlist is unavailable, it falls back to the exact individual track pairs. It never falls back to unverified text search.
+The dataset contains a verified Spotify album URL and, where available, a verified YouTube Music playlist URL. It also stores exact Spotify track URLs paired with individual YouTube Music song URLs. The downloader uses the individual verified YouTube Music video URLs directly with yt-dlp. It does not ask spotDL to resolve a playlist, which avoids the provider failure where spotDL attempted to download a YouTube URL with a missing video ID. Spotify track metadata from TKKGData determines canonical names and ordering. The playlist URL remains provenance metadata and is not used for download. The downloader never performs text search or falls back to unverified sources.
 
 If an episode has no complete verified audio mapping, the downloader stops with an actionable error. Audio discovery and correction belong in TKKGData.
 
 ## Download and output
 
-The downloader uses spotDL to retrieve the exact source pairings, validates the downloaded track count and contiguous order against TKKGData, then merges the tracks with FFmpeg.
+The downloader invokes yt-dlp once per exact verified YouTube Music video URL, extracts MP3 audio at 192 kbit/s, validates every expected file and the complete track order against TKKGData, then merges the tracks with FFmpeg.
 
 For example:
 
@@ -75,7 +75,7 @@ For example:
 
 Existing files are skipped by default. Use --overwrite to replace them. Episode range processing reports failures per episode and continues with the remaining requested episodes.
 
-spotDL uses Spotify metadata and downloads audio from the explicitly paired YouTube source. Make sure you have the rights and permissions required for any audio you download.
+The YouTube Music video IDs and Spotify track pairings are supplied by TKKGData. Make sure you have the rights and permissions required for any audio you download.
 
 ## Tests
 
