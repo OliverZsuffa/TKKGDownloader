@@ -137,6 +137,7 @@ def _download_click(
     target: Path,
     *,
     queue_retry_wait_ms: int = 30_000,
+    retry_locator: Any | None = None,
 ) -> Path:
     """Submit a visible download request and retry only explicit queue rejections."""
     started = time.monotonic()
@@ -226,23 +227,36 @@ def _download_click(
                         page.wait_for_timeout(250)
 
                     _log("Confirmed that the queue modal is closed.", started)
-                    album_button = _find_album_download(page)
-                    button_deadline = time.monotonic() + 10
-                    while album_button is None and time.monotonic() < button_deadline:
-                        if page.is_closed():
-                            raise RuntimeError("Spotisaver page closed before the album button could be retried.")
-                        page.wait_for_timeout(500)
-                        album_button = _find_album_download(page)
-                    if album_button is None:
+                    if retry_locator is None:
+                        retry_button = _find_album_download(page)
+                        button_description = "verified 'Download entire playlist' button"
+                        button_deadline = time.monotonic() + 10
+                        while retry_button is None and time.monotonic() < button_deadline:
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed before the album button could be retried.")
+                            page.wait_for_timeout(500)
+                            retry_button = _find_album_download(page)
+                    else:
+                        retry_button = retry_locator
+                        button_description = "original visible download control"
+                        button_deadline = time.monotonic() + 10
+                        while (
+                            (not retry_button.is_visible() or not retry_button.is_enabled())
+                            and time.monotonic() < button_deadline
+                        ):
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed before the download control could be retried.")
+                            page.wait_for_timeout(500)
+                    if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
                         _log_selector_state(page, "#downloadAllBtn")
                         raise RuntimeError(
-                            "Spotisaver queue modal closed, but the verified "
-                            "'Download entire playlist' button did not become available."
+                            f"Spotisaver queue modal closed, but the {button_description} "
+                            "did not become available."
                         )
 
                     attempt += 1
                     _log(f"Submitting Spotisaver download attempt {attempt}.", started)
-                    album_button.click()
+                    retry_button.click()
                     _log(
                         f"Attempt {attempt} click returned. Monitoring for another queue "
                         "rejection or the browser download event.",
@@ -538,7 +552,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                         )
                     _log(f"Found visible Download control for track {number}: {title!r}.", workflow_started)
                     stage = f"track {number} download"
-                    files.append(_download_click(page, button, destination))
+                    files.append(_download_click(page, button, destination, retry_locator=button))
                     _log(f"Track {number}/{len(plan['tracks'])} saved: {files[-1].name}", workflow_started)
                 _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files
