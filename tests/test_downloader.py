@@ -21,7 +21,7 @@ def audio_release(track_count=2, with_playlist=True):
     tracks = []
     for number in range(1, track_count + 1):
         spotify_id = f"{number:022d}"
-        video_id = f"videoid{number:05d}"
+        video_id = f"videoid{number:04d}"
         tracks.append({
             "track_number": number,
             "spotify_title": f"Teil {number:02d}",
@@ -86,9 +86,9 @@ class DownloaderSourceTests(unittest.TestCase):
         for index, command in enumerate(commands, start=1):
             self.assertIn("--no-playlist", command)
             self.assertIn("--extract-audio", command)
-            self.assertIn(f"https://music.youtube.com/watch?v=videoid{index:05d}", command)
+            self.assertIn(f"https://music.youtube.com/watch?v=videoid{index:04d}", command)
             self.assertNotIn("spotdl", command[0].lower())
-            self.assertFalse(any("playlist" in part for part in command))
+            self.assertNotIn("https://music.youtube.com/playlist", " ".join(command))
 
     def test_download_does_not_depend_on_playlist_metadata(self):
         episode = Episode(150, "Heiße Nächte im Dezember", audio_release(with_playlist=False))
