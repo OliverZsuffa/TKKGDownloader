@@ -32,8 +32,13 @@ def _ffconcat_quote(path: Path) -> str:
 def merge_tracks(
     tracks: list[Path], output: Path, ffmpeg: str = "ffmpeg",
     diagnostics: dict[str, Any] | None = None,
+    manifest: dict[str, Any] | None = None,
 ) -> None:
-    ordered = ordered_tracks(tracks)
+    if manifest is not None:
+        from .audio_import import validate_track_manifest
+        ordered = validate_track_manifest(tracks, manifest)
+    else:
+        ordered = ordered_tracks(tracks)
     output.parent.mkdir(parents=True, exist_ok=True)
     concat_file = output.with_suffix(".concat.txt")
     temporary_output = output.with_name(output.stem + ".partial.mp3")
