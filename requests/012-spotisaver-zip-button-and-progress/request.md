@@ -32,9 +32,17 @@ While processing, show a concise progress line with the number of tracks downloa
 
 ## Console output
 
-Provide two complementary levels of output:
+Provide three complementary aspects of output:
 
-1. A readable progress summary for ordinary use. It should report meaningful state transitions and periodic progress, for example:
+1. A live terminal progress bar for ordinary use, similar to pip. Update the same console line in place using carriage return or an equivalent terminal-aware mechanism. Show a visual bar, completed/total tracks, percentage, and ETA when available. Example:
+
+   ```text
+   Spotisaver  [███████████████░░░░░]  30/40 tracks  75%  ETA 1m 32s
+   ```
+
+   When processing completes, finish the progress line cleanly before switching to short stage messages. In non-interactive output, use concise periodic progress lines instead. Do not emit a new progress line for every poll.
+
+2. A readable stage summary for meaningful state transitions, for example:
    - `[Spotisaver] Opening album 150: Heiße Nächte im Dezember`
    - `[Spotisaver] Queue busy. Retrying in 30 seconds (attempt 1)`
    - `[Spotisaver] Downloading tracks: 30/40 (75%). ETA 1m 32s`
@@ -42,7 +50,7 @@ Provide two complementary levels of output:
    - `[Spotisaver] ZIP ready. Starting browser download`
    - `[Spotisaver] ZIP saved: <filename> (<size>)`
    - `[Spotisaver] Validated 40/40 tracks. Merging MP3`
-2. Detailed timestamped diagnostics for troubleshooting. Retain useful selector counts, modal state changes, retry decisions, click stages, download event timing, filename, file size, and exception details. Avoid repeating the entire mini-log or unchanged selector details every second. If a verbose/debug switch already exists, use it; otherwise keep concise progress as the default and detailed diagnostics on meaningful transitions and failures. Do not add a new CLI option unless the existing architecture makes it clearly necessary.
+3. Detailed timestamped diagnostics for troubleshooting. Retain useful selector counts, modal state changes, retry decisions, click stages, download event timing, filename, file size, and exception details. Avoid repeating the entire mini-log or unchanged selector details every second. If a verbose/debug switch already exists, use it; otherwise keep concise progress as the default and detailed diagnostics on meaningful transitions and failures. Do not add a new CLI option unless the existing architecture makes it clearly necessary.
 
 - Keep the 15-second heartbeat, but make it concise and include current progress and ETA where available.
 
