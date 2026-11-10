@@ -142,6 +142,15 @@ class DiagnosticIntegrationTests(unittest.TestCase):
             self.assertTrue(Path(data["outputs"]["pcm_master"]).is_file())
             self.assertTrue(Path(data["outputs"]["boundary_review"]).is_file())
             self.assertEqual(len(data["boundaries"]), 1)
+            self.assertIsNotNone(data["boundaries"][0]["before_level_and_silence"]["rms_level_db"])
+            self.assertIsNotNone(data["boundaries"][0]["after_level_and_silence"]["peak_level_db"])
+            source_report = json.loads(
+                (root / "workspace" / "reports" / "source-inspection.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(all(
+                item["level_and_silence_metrics"]["rms_level_db"] is not None
+                for item in source_report
+            ))
             self.assertTrue(data["pcm_320k_mp3"]["metadata"]["verified"])
             self.assertEqual(len(tracks), 2)
             self.assertTrue(all(path.is_file() for path in tracks))
