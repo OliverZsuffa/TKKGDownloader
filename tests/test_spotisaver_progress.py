@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import re
+from unittest.mock import patch
 
 from tkkgdownloader.spotisaver import (
     _find_zip_download_button,
@@ -156,9 +157,10 @@ class SpotisaverProgressTests(unittest.TestCase):
         reporter = _ProgressReporter()
         reporter.interactive = False
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            reporter.start_queue_wait()
-            reporter.finish_queue_wait()
+        with patch("tkkgdownloader.spotisaver.time.monotonic", side_effect=[100.0, 100.0, 102.0]):
+            with contextlib.redirect_stdout(output):
+                reporter.start_queue_wait()
+                reporter.finish_queue_wait()
         lines = output.getvalue().splitlines()
         self.assertEqual(len(lines), 1)
         self.assertRegex(lines[0], r"^Waiting for download slot\.\.\. \d+m \d{2}s elapsed$")
