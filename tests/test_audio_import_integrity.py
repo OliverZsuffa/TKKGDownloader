@@ -135,13 +135,13 @@ class TrackIdentityTests(unittest.TestCase):
             tagged = root / "tagged.mp3"
             tagged.write_bytes(b"audio")
             tags = ID3()
-            tags.add(TIT2(encoding=3, text="Wrong embedded title"))
+            tags.add(TIT2(encoding=3, text="Incorrect embedded title"))
             tags.add(TRCK(encoding=3, text="7/12"))
             tags.save(tagged)
-            archive = make_archive(root, [("Wrong embedded title.mp3", tagged.read_bytes())])
+            archive = make_archive(root, [("Canonical.mp3", tagged.read_bytes())])
             manifest: dict = {}
             import_audio_files(
-                [archive], expected("Wrong embedded title"), root / "work",
+                [archive], expected("Canonical"), root / "work",
                 manifest_out=manifest,
             )
             self.assertEqual(manifest["tracks"][0]["embedded_metadata"]["track_number"], "7/12")
