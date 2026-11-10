@@ -93,3 +93,14 @@ The album and track metadata fallback requires both an exact normalized album ma
 Record the matching method, evidence type, and matched title key in the manifest. Keep fuzzy similarity strictly diagnostic only. It may be used to explain likely candidates in a future interactive review workflow, but never to assign a source automatically.
 
 At logger startup, create the persistent diagnostic file, write and flush an initialization record, and verify that the file exists before starting the browser. If this fails, report the actual filesystem error and do not claim that a log exists.
+
+
+## 013. Validate source formats and output duration before selecting a merge
+
+The normal merger uses an automatic quality-first strategy. Probe every source track and record codec, sample rate, channel count, channel layout, and duration. Stream copy is eligible only when all source audio formats are identical. A stream-copy candidate must pass a full decode and its duration must be within the configured tolerance of the summed source durations. If source formats differ, stream copy fails, decoding fails, or the duration check fails, discard the candidate and merge through 24-bit PCM segments at a common sample rate and channel count, followed by one 320 kbit/s MP3 encode. The PCM-derived output must also pass a full decode and duration validation before it replaces the requested output. Never leave a partial or unvalidated file at the final destination.
+
+The duration tolerance is max(3 seconds, 0.1 seconds per source track), allowing normal MP3 frame padding and encoder delay while rejecting substantial timestamp drift. Preserve the old stream-copy and 192 kbit/s fallback path only as an explicitly selected legacy strategy for diagnostics. It is not the production default.
+
+Diagnostic duration outlier analysis treats track 1 separately because TKKG episode releases commonly include an introduction and disclaimer in the first segment. The median for ordinary segments is calculated from tracks 2 onward. Track 1 is flagged only when it is implausibly short or exceeds the dedicated intro threshold. This is a review heuristic, not evidence that audio is defective.
+
+Checksums and successful decoding establish file identity and technical readability, not semantic correctness or audible continuity. Boundary review and human listening remain necessary.

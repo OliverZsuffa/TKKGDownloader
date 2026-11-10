@@ -239,6 +239,19 @@ def _duration(probe: dict[str, Any]) -> float:
     return float(value) if value is not None else 0.0
 
 
+def _duration_flags(track_number: int, duration: float, ordinary_median: float) -> list[str]:
+    """Apply normal segment thresholds separately from the introductory track."""
+    if not ordinary_median:
+        return []
+    if track_number == 1:
+        if duration < 5 or duration > max(180, ordinary_median * 3):
+            return ["intro_duration_outlier"]
+        return []
+    if abs(duration - ordinary_median) > max(30, ordinary_median * 0.2):
+        return ["duration_outlier"]
+    return []
+
+
 def _inspect_sources(
     tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Path,
     track_manifest: dict[str, Any] | None = None,
@@ -294,8 +307,14 @@ def _inspect_sources(
         }
         records.append(record)
         print(f"Inspected track {index}/{len(tracks)}: {path.name}", flush=True)
-    positive = [item for item in durations if item > 0]
-    median = sorted(positive)[len(positive) // 2] if positive else 0
+    ordinary_durations = [
+        item["duration_seconds"] for item in records
+        if item["track_number"] != 1 and item["duration_seconds"] > 0
+    ]
+    median = (
+        sorted(ordinary_durations)[len(ordinary_durations) // 2]
+        if ordinary_durations else 0
+    )
     rms_values = [
         item["level_and_silence_metrics"]["rms_level_db"]
         for item in records
@@ -306,7 +325,11 @@ def _inspect_sources(
         flags = []
         if record["decode_returncode"] != 0:
             flags.append("full_decode_failed")
-        if median and abs(record["duration_seconds"] - median) > max(30, median * 0.2):
+        duration = record["duration_seconds"]
+        if median and record["track_number"] == 1:
+            if duration < 5 or duration > max(180, median * 3):
+                flags.append("intro_duration_outlier")
+        elif median and abs(duration - median) > max(30, median * 0.2):
             flags.append("duration_outlier")
         if record["size_bytes"] < 16_384:
             flags.append("unusually_small_file")
@@ -521,7 +544,7 @@ def run_episode_diagnostics(
     stream_merge_details: dict[str, Any] = {}
     merge_tracks(
         tracks, stream_copy, ffmpeg=ffmpeg, diagnostics=stream_merge_details,
-        manifest=track_manifest,
+        manifest=track_manifest, strategy="legacy",
     )
     stream_result = _validate_output(stream_copy, ffmpeg, ffprobe)
     stream_result["merge_details"] = stream_merge_details
