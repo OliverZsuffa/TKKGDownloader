@@ -1,4 +1,4 @@
-"""Download verified TKKGData source pairings and merge them into one MP3."""
+"""Download verified TKKGData YouTube tracks and merge them into one MP3."""
 
 from __future__ import annotations
 
@@ -10,11 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .audio_sources import (
-    build_individual_track_queries,
-    build_playlist_query,
-    validate_audio_release,
-)
+from .audio_sources import validate_audio_release
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
 
@@ -23,15 +19,16 @@ def _command(name: str) -> list[str]:
     executable = shutil.which(name)
     if executable:
         return [executable]
-    if name == "spotdl":
+    if name == "yt-dlp":
         try:
-            import spotdl  # noqa: F401
+            import yt_dlp  # noqa: F401
         except ImportError:
             pass
         else:
-            return [sys.executable, "-m", "spotdl"]
+            return [sys.executable, "-m", "yt_dlp"]
     raise RuntimeError(
-        f"Could not find {name!r}. Install it and make sure it is available on PATH."
+        f"Could not find {name!r}. Install the project dependencies and make sure "
+        "the executable is available on PATH."
     )
 
 
@@ -76,22 +73,12 @@ def _run_with_progress(
     return return_code
 
 
-def _download_command(spotdl: list[str], query: str) -> list[str]:
-    output_template = "{album}/{track-number} - {title}.{output-ext}"
-    return [
-        *spotdl, "download", query,
-        "--format", "mp3",
-        "--bitrate", "192k",
-        "--output", output_template,
-    ]
-
-
 def _validate_downloaded_files(directory: Path, expected_count: int) -> list[Path]:
     tracks = ordered_tracks(list(directory.rglob("*.mp3")))
     if len(tracks) != expected_count:
         raise RuntimeError(
             f"Incomplete audio download: TKKGData verifies {expected_count} tracks, "
-            f"but spotDL produced {len(tracks)} MP3 files. No combined file was created."
+            f"but yt-dlp produced {len(tracks)} MP3 files. No combined file was created."
         )
     numbers = [int(track.stem.split(" - ", 1)[0]) for track in tracks]
     if numbers != list(range(1, expected_count + 1)):
@@ -106,46 +93,60 @@ def _validate_downloaded_files(directory: Path, expected_count: int) -> list[Pat
             "The download did not produce exactly one album folder. "
             f"Found: {found}. No combined file was created."
         )
+    for track in tracks:
+        if track.stat().st_size == 0:
+            raise RuntimeError(
+                f"Downloaded track {track.name} is empty. No combined file was created."
+            )
     return tracks
 
 
-def _download_playlist(
-    spotdl: list[str],
-    query: str,
-    directory: Path,
-    expected_count: int,
-    episode_number: int,
-) -> list[Path]:
-    directory.mkdir(parents=True, exist_ok=True)
-    result = _run_with_progress(
-        _download_command(spotdl, query),
-        stage=f"Downloading verified YouTube Music playlist for episode {episode_number}",
-        cwd=directory,
-    )
-    if result != 0:
-        raise RuntimeError(f"spotDL playlist download failed (exit code {result}).")
-    return _validate_downloaded_files(directory, expected_count)
-
-
-def _download_individual_tracks(
-    spotdl: list[str],
+def _download_verified_tracks(
+    yt_dlp: list[str],
     plan: dict,
     directory: Path,
-    episode_number: int,
+    episode: Episode,
 ) -> list[Path]:
-    directory.mkdir(parents=True, exist_ok=True)
-    track_queries = build_individual_track_queries(plan)
-    for item in track_queries:
+    album_dir = directory / _safe_filename(plan["spotify_album_title"])
+    album_dir.mkdir(parents=True, exist_ok=True)
+
+    for track in plan["tracks"]:
+        number = track["track_number"]
+        title = _safe_filename(track["spotify_title"])
+        output_template = album_dir / f"{number:02d} - {title}.%(ext)s"
+        command = [
+            *yt_dlp,
+            "--no-warnings",
+            "--no-playlist",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "192K",
+            "--windows-filenames",
+            "--output", str(output_template),
+            track["youtube_music_url"],
+        ]
         result = _run_with_progress(
-            _download_command(spotdl, item["query"]),
-            stage=f"Downloading verified track {item['track_number']}/{plan['track_count']} for episode {episode_number}",
+            command,
+            stage=(
+                f"Downloading verified track {number}/{plan['track_count']} "
+                f"for episode {episode.number}"
+            ),
             cwd=directory,
         )
         if result != 0:
             raise RuntimeError(
-                f"spotDL failed to download verified track {item['track_number']} "
-                f"for episode {episode_number} (exit code {result})."
+                f"yt-dlp failed to download verified track {number}/"
+                f"{plan['track_count']} for episode {episode.number} "
+                f"(exit code {result}). No combined file was created."
             )
+        expected_file = album_dir / f"{number:02d} - {title}.mp3"
+        if not expected_file.is_file() or expected_file.stat().st_size == 0:
+            raise RuntimeError(
+                f"yt-dlp reported success for verified track {number}/"
+                f"{plan['track_count']} but did not produce the expected MP3 "
+                f"file {expected_file.name}. No combined file was created."
+            )
+
     return _validate_downloaded_files(directory, plan["track_count"])
 
 
@@ -171,41 +172,30 @@ def download_episode(
             f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}"
         ) from exc
 
-    spotdl = _command("spotdl")
-    ffmpeg = _command("ffmpeg")[0]
+    yt_dlp = _command("yt-dlp")
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError(
+            "Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH."
+        )
+
     print(f"Verified release: {plan['spotify_album_title']}", flush=True)
     print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
     if plan["youtube_music_playlist_url"]:
-        print(f"YouTube Music playlist: {plan['youtube_music_playlist_url']}", flush=True)
-    print(f"Verified individual track links: {plan['track_count']}", flush=True)
+        print(
+            f"Verified YouTube Music playlist (provenance only): "
+            f"{plan['youtube_music_playlist_url']}",
+            flush=True,
+        )
+    print(
+        f"Downloading {plan['track_count']} individually verified YouTube Music tracks "
+        "using their exact video IDs.",
+        flush=True,
+    )
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
         work_dir = Path(temp)
-        tracks = None
-        playlist_query = build_playlist_query(plan)
-        if playlist_query:
-            try:
-                tracks = _download_playlist(
-                    spotdl,
-                    playlist_query,
-                    work_dir / "playlist",
-                    plan["track_count"],
-                    episode.number,
-                )
-            except RuntimeError as exc:
-                print(
-                    f"Playlist download unavailable: {exc} "
-                    "Falling back to the individually verified track URLs.",
-                    flush=True,
-                )
-
-        if tracks is None:
-            tracks = _download_individual_tracks(
-                spotdl,
-                plan,
-                work_dir / "individual",
-                episode.number,
-            )
+        tracks = _download_verified_tracks(yt_dlp, plan, work_dir, episode)
 
         print("Verified downloaded files:", flush=True)
         for track in tracks:

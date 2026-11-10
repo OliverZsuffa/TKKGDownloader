@@ -7,7 +7,7 @@ from tkkgdownloader.downloader import download_episode
 from tkkgdownloader.episodes import Episode
 
 
-def audio_release(with_playlist=True):
+def audio_release(track_count=2, with_playlist=True):
     spotify_album_id = "0ZqyFeMXxCyIJvYptGlnn1"
     playlist = None
     if with_playlist:
@@ -16,12 +16,12 @@ def audio_release(with_playlist=True):
             "playlist_id": playlist_id,
             "url": f"https://music.youtube.com/playlist?list={playlist_id}",
             "title": "150/Heiße Nächte im Dezember",
-            "track_count": 2,
+            "track_count": track_count,
         }
     tracks = []
-    for number in (1, 2):
-        spotify_id = f"000000000000000000000{number}"
-        video_id = f"videoid000{number}"
+    for number in range(1, track_count + 1):
+        spotify_id = f"{number:022d}"
+        video_id = f"videoid{number:04d}"
         tracks.append({
             "track_number": number,
             "spotify_title": f"Teil {number:02d}",
@@ -36,64 +36,90 @@ def audio_release(with_playlist=True):
             "album_id": spotify_album_id,
             "url": f"https://open.spotify.com/album/{spotify_album_id}",
             "title": "150/Heiße Nächte im Dezember",
-            "track_count": 2,
+            "track_count": track_count,
         },
-        "youtube_music": {"playlist": playlist, "tracks": tracks, "track_count": 2},
-        "verification": {"status": "verified", "matched_track_count": 2},
+        "youtube_music": {
+            "playlist": playlist,
+            "tracks": tracks,
+            "track_count": track_count,
+        },
+        "verification": {"status": "verified", "matched_track_count": track_count},
     }
 
 
 class DownloaderSourceTests(unittest.TestCase):
-    def _fake_successful_download(self, commands):
+    def _fake_download(self, commands, *, fail_at=None, omit_at=None):
         def run(command, *, stage, cwd=None, heartbeat_seconds=10):
             commands.append(command)
-            number = len(commands) if "verified track" in stage else None
-            if number is None:
-                numbers = (1, 2)
-            else:
-                numbers = (number,)
-            album_dir = cwd / "150 - Heiße Nächte im Dezember"
-            album_dir.mkdir(parents=True, exist_ok=True)
-            for track_number in numbers:
-                (album_dir / f"{track_number:02d} - Teil {track_number:02d}.mp3").write_bytes(b"audio")
+            output_template = Path(command[command.index("--output") + 1])
+            output_path = Path(str(output_template).replace("%(ext)s", "mp3"))
+            track_number = int(output_path.name.split(" - ", 1)[0])
+            if track_number == fail_at:
+                return 1
+            if track_number != omit_at:
+                output_path.write_bytes(b"mock audio")
             return 0
         return run
 
-    def test_playlist_pair_is_preferred_and_merged(self):
-        episode = Episode(150, "Heiße Nächte im Dezember", audio_release())
-        commands = []
-        with tempfile.TemporaryDirectory() as temp_dir, \
-             patch("tkkgdownloader.downloader._command", side_effect=[["spotdl"], ["ffmpeg"]]), \
-             patch("tkkgdownloader.downloader._run_with_progress", side_effect=self._fake_successful_download(commands)), \
-             patch("tkkgdownloader.downloader.merge_tracks") as merge:
-            result = download_episode(episode, Path(temp_dir), assume_yes=True)
-        self.assertTrue(result.name.startswith("TKKG 150"))
-        self.assertEqual(len(commands), 1)
-        self.assertIn("music.youtube.com/playlist", commands[0][2])
-        self.assertIn("open.spotify.com/album", commands[0][2])
-        self.assertEqual(len(merge.call_args.args[0]), 2)
+    def _patches(self, commands, *, fail_at=None, omit_at=None):
+        return (
+            patch("tkkgdownloader.downloader._command", return_value=["yt-dlp"]),
+            patch("tkkgdownloader.downloader.shutil.which", return_value="ffmpeg"),
+            patch(
+                "tkkgdownloader.downloader._run_with_progress",
+                side_effect=self._fake_download(commands, fail_at=fail_at, omit_at=omit_at),
+            ),
+        )
 
-    def test_playlist_failure_falls_back_to_exact_individual_pairs(self):
-        episode = Episode(150, "Heiße Nächte im Dezember", audio_release())
+    def test_downloads_each_exact_verified_video_url_and_merges(self):
+        release = audio_release(track_count=3)
+        episode = Episode(150, "Heiße Nächte im Dezember", release)
         commands = []
-        def run(command, *, stage, cwd=None, heartbeat_seconds=10):
-            commands.append(command)
-            if "playlist" in stage:
-                return 1
-            track_number = int(stage.split("track ")[1].split("/")[0])
-            album_dir = cwd / "150 - Heiße Nächte im Dezember"
-            album_dir.mkdir(parents=True, exist_ok=True)
-            (album_dir / f"{track_number:02d} - Teil {track_number:02d}.mp3").write_bytes(b"audio")
-            return 0
-        with tempfile.TemporaryDirectory() as temp_dir, \
-             patch("tkkgdownloader.downloader._command", side_effect=[["spotdl"], "ffmpeg"]), \
-             patch("tkkgdownloader.downloader._run_with_progress", side_effect=run), \
+        patches = self._patches(commands)
+        with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
              patch("tkkgdownloader.downloader.merge_tracks") as merge:
             result = download_episode(episode, Path(temp_dir), assume_yes=True)
+
         self.assertTrue(result.name.startswith("TKKG 150"))
         self.assertEqual(len(commands), 3)
-        self.assertIn("music.youtube.com/watch?v=videoid0001|https://open.spotify.com/track/", commands[1][2])
+        self.assertEqual(len(merge.call_args.args[0]), 3)
+        for index, command in enumerate(commands, start=1):
+            self.assertIn("--no-playlist", command)
+            self.assertIn("--extract-audio", command)
+            self.assertIn(f"https://music.youtube.com/watch?v=videoid{index:04d}", command)
+            self.assertNotIn("spotdl", command[0].lower())
+            self.assertNotIn("https://music.youtube.com/playlist", " ".join(command))
+
+    def test_download_does_not_depend_on_playlist_metadata(self):
+        episode = Episode(150, "Heiße Nächte im Dezember", audio_release(with_playlist=False))
+        commands = []
+        patches = self._patches(commands)
+        with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
+             patch("tkkgdownloader.downloader.merge_tracks") as merge:
+            download_episode(episode, Path(temp_dir), assume_yes=True)
+        self.assertEqual(len(commands), 2)
         self.assertEqual(len(merge.call_args.args[0]), 2)
+
+    def test_failed_track_stops_download_and_prevents_merge(self):
+        episode = Episode(150, "Heiße Nächte im Dezember", audio_release())
+        commands = []
+        patches = self._patches(commands, fail_at=2)
+        with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
+             patch("tkkgdownloader.downloader.merge_tracks") as merge:
+            with self.assertRaisesRegex(RuntimeError, "verified track 2/2"):
+                download_episode(episode, Path(temp_dir), assume_yes=True)
+        self.assertEqual(len(commands), 2)
+        merge.assert_not_called()
+
+    def test_success_without_expected_mp3_fails_before_merge(self):
+        episode = Episode(150, "Heiße Nächte im Dezember", audio_release())
+        commands = []
+        patches = self._patches(commands, omit_at=1)
+        with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
+             patch("tkkgdownloader.downloader.merge_tracks") as merge:
+            with self.assertRaisesRegex(RuntimeError, "did not produce the expected MP3"):
+                download_episode(episode, Path(temp_dir), assume_yes=True)
+        merge.assert_not_called()
 
     def test_missing_verified_mapping_fails_clearly(self):
         episode = Episode(150, "Heiße Nächte im Dezember")

@@ -28,15 +28,16 @@ The release contains:
 
 The downloader validates all IDs against their URLs, validates the cross-provider counts, and requires a contiguous one-based track sequence.
 
-## Download order
+## Download execution
 
-1. Prefer the verified YouTube Music playlist paired with its Spotify album URL.
-2. If the playlist is unavailable or the playlist download fails, use the exact individual YouTube Music song URL paired with its Spotify track URL.
-3. Never perform Spotify or YouTube Music text searches.
-4. Never write corrections back to TKKGData.
-5. Reject incomplete or unverified mappings and incomplete downloads before merging.
+1. Validate the complete ordered track mapping from TKKGData.
+2. Invoke yt-dlp directly for each exact YouTube Music video URL. Do not ask spotDL to resolve a playlist or song.
+3. Use the paired Spotify track metadata for deterministic track naming and ordering.
+4. Extract MP3 at 192 kbit/s into an isolated temporary album directory.
+5. Require every expected file to exist and be non-empty, and validate the complete track count and contiguous numbering before merging.
+6. Never perform Spotify or YouTube Music text searches. Never write corrections back to TKKGData.
 
-spotDL documents manual matching as YouTubeURL|SpotifyURL and supports pairing YouTube Music playlists or albums with corresponding Spotify lists. Its current implementation also accepts individual YouTube watch URLs paired with Spotify track URLs.
+The playlist URL remains provenance metadata. The direct track URLs are the execution inputs. This avoids the spotDL 4.5.2 failure observed during episode 150, where playlist resolution reached a download URL with a missing video ID (watch?v=None).
 
 ## Compatibility boundary
 

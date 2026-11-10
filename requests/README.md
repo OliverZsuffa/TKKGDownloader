@@ -12,6 +12,7 @@ Requests define what the project should do. Implementation plans define how an a
 7. Merge into main only after verification and Oliver's explicit approval.
 
 ## Request index
+- [005: Fix verified YouTube Music downloads](005-fix-youtube-music-download/request.md) — replace the failing spotDL YouTube extraction path with a reliable method using exact verified TKKGData track IDs.
 - [004: Make TKKGDownloader a TKKGData consumer](004-tkkgdata-consumer/request.md) — consume shared episode and verified audio release data rather than resolving metadata independently.
 - [003: Album count and progress](003-album-count-and-progress/implementation-plan.md)
 - [001: Episode downloader](001-episode-downloader/request.md)
