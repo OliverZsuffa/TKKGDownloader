@@ -899,6 +899,8 @@ def download_and_import(
     work_dir: Path,
     *,
     episode_number: int | None = None,
+    episode_title: str | None = None,
+    manifest_out: dict | None = None,
 ) -> list[Path]:
     """Download, validate, and import an album while retaining per-run diagnostics."""
     global _ACTIVE_DIAGNOSTIC_LOGGER, _ACTIVE_PROGRESS_REPORTER
@@ -923,7 +925,15 @@ def download_and_import(
             report_stage("Archive downloaded. Validating tracks...", "info")
         else:
             report_stage("Downloads complete. Validating tracks...", "info")
-        tracks = import_audio_files(files, plan["tracks"], work_dir / "validated-tracks")
+        tracks = import_audio_files(
+            files,
+            plan["tracks"],
+            work_dir / "validated-tracks",
+            manifest_out=manifest_out,
+            episode_number=episode_number,
+            episode_title=episode_title,
+            album_title=plan.get("spotify_album_title"),
+        )
         report_stage(f"All {len(tracks)} tracks validated.", "success")
         return tracks
     except KeyboardInterrupt:
