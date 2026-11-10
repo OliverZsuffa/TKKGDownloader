@@ -431,7 +431,7 @@ def run_episode_diagnostics(
         raise FileExistsError(encoded)
     result = _run([
         ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(master),
-        "-c:a", "libmp3lame", "-b:a", "320k", "-q:a", "0", str(encoded)
+        "-c:a", "libmp3lame", "-b:a", "320k", str(encoded)
     ])
     if result["returncode"] != 0:
         raise RuntimeError(f"320 kbit/s MP3 encoding failed: {result['stderr']}")
