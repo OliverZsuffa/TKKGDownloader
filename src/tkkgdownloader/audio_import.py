@@ -136,13 +136,48 @@ def _validate_expected_tracks(expected_tracks: list[dict[str, Any]]) -> list[dic
     return sorted(expected_tracks, key=lambda item: item["track_number"])
 
 
-def _filename_keys(path: Path, expected_number: int) -> set[str]:
-    stem = path.stem
-    keys = {_normalize(stem)}
-    prefix = re.match(r"^\s*(\d{1,3})\s*[._-]+\s*(.+)$", stem)
+def _filename_candidates(path: Path, expected_number: int) -> list[tuple[str, str]]:
+    """Return exact title candidates after removing recognised provider wrappers."""
+    stem = path.stem.strip()
+    candidates: list[tuple[str, str]] = [(stem, "exact_normalized_filename")]
+    wrapped = re.sub(r"^TKKG\s*[-_.]+\s*", "", stem, flags=re.I)
+    wrapped = re.sub(r"\s*\(SPOTISAVER\)\s*$", "", wrapped, flags=re.I)
+    if wrapped != stem:
+        candidates.append((wrapped, "exact_normalized_filename_after_provider_wrapper"))
+    prefix = re.match(r"^\s*(\d{1,3})\s*[._-]+\s*(.+)$", wrapped)
     if prefix and int(prefix.group(1)) == expected_number:
-        keys.add(_normalize(prefix.group(2)))
-    return {key for key in keys if key}
+        candidates.append((prefix.group(2), "exact_normalized_title_after_matching_track_prefix"))
+    unique: dict[str, str] = {}
+    for value, rule in candidates:
+        key = _normalize(value)
+        if key:
+            unique.setdefault(key, rule)
+    return [(key, rule) for key, rule in unique.items()]
+
+
+def _metadata_track_number(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.match(r"^\s*(\d+)(?:\s*/\s*\d+)?\s*$", value)
+    return int(match.group(1)) if match else None
+
+
+def _metadata_identity_matches(metadata: dict[str, str | None], number: int, album_title: str | None) -> bool:
+    """Require both a track number and matching album identity for tag fallback."""
+    tagged_number = _metadata_track_number(metadata.get("track_number"))
+    tagged_album = _normalize(metadata.get("album") or "")
+    expected_album = _normalize(album_title or "")
+    return bool(tagged_number == number and expected_album and tagged_album == expected_album)
+
+
+def _track_title_keys(track: dict[str, Any]) -> set[str]:
+    values = [track.get("spotify_title")]
+    aliases = track.get("alternate_titles", [])
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    if isinstance(aliases, list):
+        values.extend(aliases)
+    return {_normalize(value) for value in values if isinstance(value, str) and _normalize(value)}
 
 
 def import_audio_files(
@@ -168,33 +203,64 @@ def import_audio_files(
             f"{expected_count} tracks. No combined file was created."
         )
 
-    mappings: list[tuple[dict[str, Any], Path, str]] = []
+    mappings: list[tuple[dict[str, Any], Path, str, dict[str, Any]]] = []
+    metadata_cache = {source: _read_embedded_metadata(source) for source in mp3s}
     for track in expected:
         number = track["track_number"]
-        expected_key = _normalize(track["spotify_title"])
-        matches: list[tuple[Path, str]] = []
+        title_keys = _track_title_keys(track)
+        matches: list[tuple[Path, str, dict[str, Any]]] = []
         for source in mp3s:
-            keys = _filename_keys(source, number)
-            if expected_key in keys:
-                rule = "exact_normalized_title" if _normalize(source.stem) == expected_key else "exact_normalized_title_with_matching_numeric_prefix"
-                matches.append((source, rule))
+            metadata, metadata_status, metadata_warnings = metadata_cache[source]
+            filename_matches = [
+                (rule, key) for key, rule in _filename_candidates(source, number)
+                if key in title_keys
+            ]
+            if filename_matches:
+                rule, matched_key = filename_matches[0]
+                matches.append((source, rule, {
+                    "evidence": "filename_title",
+                    "matched_title_key": matched_key,
+                    "metadata": metadata,
+                    "metadata_status": metadata_status,
+                    "metadata_warnings": metadata_warnings,
+                }))
+                continue
+            tagged_title = _normalize(metadata.get("title") or "")
+            if tagged_title and tagged_title in title_keys:
+                matches.append((source, "exact_embedded_title", {
+                    "evidence": "embedded_title",
+                    "matched_title_key": tagged_title,
+                    "metadata": metadata,
+                    "metadata_status": metadata_status,
+                    "metadata_warnings": metadata_warnings,
+                }))
+                continue
+            if _metadata_identity_matches(metadata, number, album_title):
+                matches.append((source, "verified_album_and_track_metadata", {
+                    "evidence": "embedded_album_and_track_number",
+                    "matched_title_key": None,
+                    "metadata": metadata,
+                    "metadata_status": metadata_status,
+                    "metadata_warnings": metadata_warnings,
+                }))
         if len(matches) != 1:
             raise RuntimeError(
-                f"Could not uniquely match Spotisaver's downloaded filename to track "
-                f"{number}/{expected_count} ({track['spotify_title']}). "
-                f"Found {len(matches)} exact matches. Source files were preserved and no merge was made."
+                f"Could not uniquely identify source for track {number}/{expected_count} "
+                f"({track['spotify_title']}). Found {len(matches)} candidates. "
+                "Filename, exact embedded title, and verified album plus track number "
+                "were checked. Fuzzy matching is never automatic."
             )
-        source, rule = matches[0]
+        source, rule, evidence = matches[0]
         if source.stat().st_size == 0:
             raise RuntimeError(f"Downloaded track {number} is empty.")
-        mappings.append((track, source, rule))
+        mappings.append((track, source, rule, evidence))
 
-    assigned = [source for _, source, _ in mappings]
+    assigned = [source for _, source, _, _ in mappings]
     if len(set(assigned)) != len(mp3s) or set(assigned) != set(mp3s):
         raise RuntimeError("Spotisaver source files do not map one-to-one to the canonical tracklist.")
 
     source_hashes: dict[str, str] = {}
-    for track, source, _ in mappings:
+    for track, source, _, _ in mappings:
         digest = _sha256(source)
         if digest in source_hashes:
             raise RuntimeError(
@@ -206,7 +272,7 @@ def import_audio_files(
     validated: list[Path] = []
     entries: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    for track, source, rule in mappings:
+    for track, source, rule, evidence in mappings:
         number = track["track_number"]
         target = destination / f"{number:02d} - {track['spotify_title']}.mp3"
         shutil.copy2(source, target)
@@ -214,7 +280,9 @@ def import_audio_files(
         target_hash = _sha256(target)
         if source_hash != target_hash:
             raise RuntimeError(f"Checksum mismatch after copying source track {number}. No merge was made.")
-        metadata, metadata_status, metadata_warnings = _read_embedded_metadata(source)
+        metadata = evidence["metadata"]
+        metadata_status = evidence["metadata_status"]
+        metadata_warnings = evidence["metadata_warnings"]
         entry_warnings = list(metadata_warnings)
         if metadata.get("title") and _normalize(metadata["title"]) != _normalize(track["spotify_title"]):
             entry_warnings.append(
@@ -236,6 +304,8 @@ def import_audio_files(
             "canonical_filename": target.name,
             "canonical_path": target.resolve().relative_to(destination.resolve()).as_posix(),
             "matching_rule": rule,
+            "matching_evidence": evidence["evidence"],
+            "matched_title_key": evidence["matched_title_key"],
             "size_bytes": source.stat().st_size,
             "source_sha256": source_hash,
             "canonical_sha256": target_hash,
