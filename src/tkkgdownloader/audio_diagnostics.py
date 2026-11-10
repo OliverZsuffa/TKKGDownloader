@@ -332,6 +332,15 @@ def _inspect_sources(
             f'{item["codec"]} | {item["size_bytes"]} bytes | decode exit {item["decode_returncode"]} | '
             f'flags: {", ".join(item["flags"]) or "none"}'
         )
+        mapping = item.get("source_mapping") or {}
+        if mapping.get("matching_rule"):
+            lines.append(
+                f'    source: {mapping.get("source_filename")} | '
+                f'match: {mapping.get("matching_rule")} | '
+                f'SHA-256: {mapping.get("source_sha256")}'
+            )
+        for warning in mapping.get("warnings", []):
+            lines.append(f"    mapping warning: {warning}")
     (reports / "source-inspection.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return records, durations
 
