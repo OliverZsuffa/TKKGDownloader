@@ -547,7 +547,7 @@ def _download_click(
                 phase = "creating ZIP archive"
             elif re.search(r"ZIP archive created", combined_status, re.I):
                 phase = "ZIP archive ready"
-            elif re.search(r"Downloaded\\s+\\d+\\s+of\\s+\\d+", status, re.I):
+            elif not queue_busy and _parse_track_progress(snapshot) is not None:
                 phase = "downloading playlist tracks"
             else:
                 phase = ""
