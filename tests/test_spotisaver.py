@@ -171,10 +171,6 @@ class SpotisaverCliTests(unittest.TestCase):
         self.assertEqual(args.provider, "spotisaver")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SpotisaverDiagnosticsTests(unittest.TestCase):
     def test_selector_diagnostic_reports_visibility_and_attributes(self):
         class DiagnosticLocator:
@@ -253,3 +249,7 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertIn("Issuing Playwright click", output.getvalue())
             self.assertIn("Browser download event received", output.getvalue())
             self.assertIn("Saved file size: 7 bytes", output.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
