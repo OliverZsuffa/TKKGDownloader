@@ -54,8 +54,8 @@ class ArtworkTests(unittest.TestCase):
                 tracks.append(path)
             result = _extract_artwork(tracks, root / "artwork")
             self.assertEqual(len(result["pictures"]), 2)
-            self.assertTrue((root / "artwork" / "cover-source-track-01.png").exists())
-            self.assertTrue((root / "artwork" / "cover-source-track-02.png").exists())
+            self.assertTrue((root / "artwork" / "cover-source-track-01-01.png").exists())
+            self.assertTrue((root / "artwork" / "cover-source-track-02-01.png").exists())
 
     def test_no_artwork_is_reported_without_substitution(self):
         with tempfile.TemporaryDirectory() as temp:
