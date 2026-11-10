@@ -2,44 +2,26 @@
 
 ## Initial evidence
 
-Oliver supplied a live modal snapshot from episode 150 showing:
+Oliver supplied a live modal snapshot showing:
 
-- Status `Downloaded 30 of 40`.
-- Progress bar value 75%.
-- A pending entry for track 31 in the mini-log.
-- ETA container `#est_timeModalBody` with template `Estimated time: {minutes}m {seconds}s`.
-- Structured ETA spans using `data-eta-part="minutes"` and `data-eta-part="seconds"`.
-- A keep-open notice.
+- Status `ZIP archive created.` and a completed progress bar.
+- All 40 playlist tracks listed as successful in the mini-log.
+- The archive ready card inside `#downloadModalBody`.
+- A visible `Download ZIP` anchor with class `.zrc-cta`, rather than a button.
+- The anchor is nested inside `.zip-ready-card` and has a direct download URL ending in `?direct=1`.
+- The card also displays the album name, track count, archive size, and downloaded or failed counts.
 
-A later console excerpt showed the processing state progressing through:
+This resolves the earlier uncertainty about the final control's element type. The previous implementation searched only for buttons, so it could miss the actual anchor and wait indefinitely despite the archive being ready.
 
-- `Downloaded 39 of 40` at 98%.
-- `Creating ZIP archive... please wait...`.
-- `ZIP archive created.` at 100%.
-- A newly visible `Download ZIP` button inside the modal.
+## Follow-up implementation
 
-The browser download event had not yet occurred at the point of the supplied log. Oliver clarified that the final `Download ZIP` button must be clicked to trigger the actual browser download.
+- Updated `_find_zip_download_button` to find the accessible `Download ZIP` link inside the active modal.
+- Added the exact observed `.zip-ready-card a.zrc-cta` selector as a narrowly scoped fallback.
+- Verify that the link is visible, has an `href`, is not marked `aria-disabled`, and is unique before clicking.
+- Retained compatibility with a real button in case the website changes its markup again.
+- Added isolated tests for accessible link discovery, CSS fallback, hidden links, missing URLs, disabled links, ambiguous links, and button compatibility.
+- The existing download listener, single-click guard, queue handling, ZIP validation, and merge pipeline remain unchanged.
 
-## Implementation status
+## Verification
 
-Approved by Oliver on 2026-11-10. Implementation is on `implement/spotisaver-zip-button-progress`.
-
-- Extended the modal snapshot with ETA text, template, minutes, seconds, track counter, progress percentage, and visible control diagnostics.
-- Added ETA formatting and track progress parsing, plus a pip-style progress reporter that updates the same terminal line when interactive and uses periodic summaries otherwise.
-- Added active-modal discovery of the unique visible, enabled `Download ZIP` button using accessible role/name lookup with exact rendered-text fallback.
-- The final ZIP button is clicked once after the archive-ready status. The browser download listener remains registered from before the initial album request.
-- Added focused unit tests for progress parsing, ETA formatting, progress rendering, ZIP button discovery, and the final ZIP click/download event sequence.
-
-## Verification status
-
-GitHub Actions run [42814681246](https://github.com/OliverZsuffa/TKKGDownloader/actions/runs/42814681246) passed. Python compilation passed, the published TKKGData contract smoke test passed, and all 63 unit tests passed, including the new final ZIP click and download-event test. No live Spotisaver download has been performed with this implementation yet.
-
-## Verification status
-
-No code or tests have been changed for this request. The exact final ZIP button markup remains to be captured only if visible role/name discovery proves insufficient during implementation or local testing.
-
-
-## Output refinement
-
-Oliver requested a real terminal progress bar similar to pip, not repeated textual progress updates. The implementation plan now specifies an in-place updating bar showing completed/total tracks, percentage, and ETA. It must finish cleanly before stage messages, and non-interactive output should use concise periodic lines.
-
+The follow-up is on branch `fix/spotisaver-zip-download-link` and awaits CI. Automated tests use mocked Playwright controls. A live browser download still needs to be confirmed locally.
