@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
-from tkkgdownloader.spotisaver import _album_title, _wait_for_album_data
+from tkkgdownloader.spotisaver import (\n    _album_title,\n    _find_album_download,\n    _find_playlist_navigation,\n    _wait_for_album_data,\n)
 
 
 def tracks():
@@ -101,6 +101,56 @@ class SpotisaverPageWaitTests(unittest.TestCase):
         self.assertEqual(page.call[1][1], ["tkkg150teil01", "tkkg150teil02"])
         self.assertEqual(page.call[2], 120_000)
 
+
+class FakeLocator:
+    def __init__(self, label='', visible=True):
+        self.label = label
+        self.visible = visible
+        self.first = self
+
+    def count(self):
+        return 1 if self.label or self.visible else 0
+
+    def is_visible(self):
+        return self.visible
+
+    def inner_text(self, timeout=None):
+        return self.label
+
+    def nth(self, index):
+        return self
+
+class FakePage:
+    def __init__(self, direct=None, navigation=None):
+        self.direct = direct or FakeLocator('', visible=False)
+        self.navigation = navigation or FakeLocator('', visible=False)
+
+    def locator(self, selector):
+        if selector == '#downloadAllBtn':
+            return self.direct
+        if selector == 'button.btn-playlist-download':
+            return self.navigation
+        raise AssertionError(f'Unexpected selector: {selector}')
+
+    def get_by_role(self, role, name):
+        return FakeLocator('', visible=False)
+
+class SpotisaverDownloadControlTests(unittest.TestCase):
+    def test_prefers_visible_entire_playlist_button(self):
+        button = FakeLocator('Download entire playlist')
+        self.assertIs(_find_album_download(FakePage(direct=button)), button)
+
+    def test_does_not_select_hidden_playlist_button(self):
+        button = FakeLocator('Download entire playlist', visible=False)
+        self.assertIsNone(_find_album_download(FakePage(direct=button)))
+
+    def test_finds_scroll_control_only_as_fallback(self):
+        button = FakeLocator('Download Playlist')
+        self.assertIs(_find_playlist_navigation(FakePage(navigation=button)), button)
+
+    def test_rejects_unrelated_navigation_button(self):
+        button = FakeLocator('Play playlist')
+        self.assertIsNone(_find_playlist_navigation(FakePage(navigation=button)))
 
 class SpotisaverCliTests(unittest.TestCase):
     def test_provider_is_opt_in(self):
