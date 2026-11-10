@@ -139,7 +139,7 @@ def _write_metadata(
                 "source": f"consistent embedded {key.replace('_', ' ')} tag across source tracks",
             }
             tags.add(frame_type(encoding=3, text=value))
-    tags.add(TRCK(encoding=3, text=f"1/{len(tracks)}"))
+    tags.add(TRCK(encoding=3, text="1/1"))
     selected = artwork.get("selected")
     expected_image = None
     if selected:
@@ -161,7 +161,7 @@ def _write_metadata(
         "track": _tag_text(readback, "TRCK"),
         "artwork_count": len(readback.getall("APIC")),
     }
-    expected = {"title": title, "track": f"1/{len(tracks)}", "artwork_count": 1 if selected else 0}
+    expected = {"title": title, "track": "1/1", "artwork_count": 1 if selected else 0}
     if album:
         expected["album"] = album
     for key in ("artist", "album_artist", "genre", "date"):
