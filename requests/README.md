@@ -17,6 +17,8 @@ Requests define what the project should do. Implementation plans define how an a
 - [003: Album count and progress](003-album-count-and-progress/implementation-plan.md)
 - [001: Episode downloader](001-episode-downloader/request.md)
 
+- [006: Spotisaver assisted source and MP3 import workflow](006-spotisaver-import-workflow/request.md) — user initiated browser handoff and validated local MP3 or ZIP import, without automating Spotisaver downloads.
+
 ## Naming
 Use NNN-short-description for request folders, for example 001-episode-downloader.
 
