@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented in PR #21 on branch request-014-track-order-integrity. GitHub Actions run 42873998047 passed all checks.
+Implemented and merged through PR #21 as commit 6e4632a492e403c047fd191976ac00f08d7394a0. GitHub Actions run 42873998047 passed all checks.
 
 ## Implemented
 
