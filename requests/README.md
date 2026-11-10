@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [009: Poll Spotisaver for the album download button](009-spotisaver-button-first-readiness/request.md) — poll the real download button every second, click immediately when ready, and preserve strict archive validation.
+
 - [008: Spotisaver diagnostic logging](008-spotisaver-diagnostic-logging/request.md) — add timestamped stage, selector, click, download-event, and file-save diagnostics.
 - [007: Spotisaver action button workflow](007-spotisaver-action-buttons/request.md) — prioritise the actual full-playlist download button and use the scroll control only as a fallback.
 - [006: Spotisaver browser provider](006-spotisaver-import-workflow/request.md) — download one requested album through the visible website interface, validate its tracks, and merge it locally.
