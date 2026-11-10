@@ -190,8 +190,9 @@ class SpotisaverProgressTests(unittest.TestCase):
             self.assertEqual(zip_button.clicked, 1)
             self.assertEqual(result.name, "album.zip")
             self.assertEqual(result.read_bytes(), b"verified archive")
-            self.assertIn("Clicking the verified Download ZIP button exactly once", output.getvalue())
-            self.assertIn("Browser download event received", output.getvalue())
+            self.assertIn("Archive ready. Downloading...", output.getvalue())
+            self.assertNotIn("Clicking the verified Download ZIP button", output.getvalue())
+            self.assertNotIn("Browser download event received", output.getvalue())
 
 
 if __name__ == "__main__":
