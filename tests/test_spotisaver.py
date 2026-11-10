@@ -344,7 +344,7 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertEqual(locator.clicked, 1)
             self.assertEqual(page.waited, 3)
             self.assertEqual(result.name, "album.zip")
-            self.assertIn("queue is busy", output.getvalue())
+            self.assertIn("rejected attempt 1", output.getvalue())
             self.assertIn("try again in 25s", output.getvalue())
             self.assertIn("queue notice cleared", output.getvalue())
             self.assertNotIn("Closing the visible modal", output.getvalue())
