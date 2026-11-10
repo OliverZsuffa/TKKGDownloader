@@ -17,6 +17,7 @@ from tkkgdownloader.spotisaver import (
     _download_click,
     _ProgressReporter,
     _render_progress_bar,
+    _create_diagnostic_logger,
     _download_failure,
     _queue_retry_seconds,
     _find_album_download,
@@ -598,6 +599,29 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
 
 
 class SpotisaverConsoleTests(unittest.TestCase):
+
+    def test_diagnostic_logs_are_unique_and_persist_outside_work_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch.dict(os.environ, {"XDG_STATE_HOME": str(root / "state")}):
+                first, first_path = _create_diagnostic_logger(148)
+                second, second_path = _create_diagnostic_logger(148)
+            try:
+                self.assertNotEqual(first_path, second_path)
+                self.assertTrue(first_path.parent.is_dir())
+                self.assertIn("148", first_path.name)
+                first.info("diagnostic test")
+                for handler in list(first.handlers):
+                    handler.flush()
+                    handler.close()
+                    first.removeHandler(handler)
+                self.assertIn("diagnostic test", first_path.read_text(encoding="utf-8"))
+            finally:
+                for logger in (first, second):
+                    for handler in list(logger.handlers):
+                        handler.close()
+                        logger.removeHandler(handler)
+
     def test_progress_line_uses_track_count_and_eta(self):
         snapshot = {
             "status": "Downloaded 8 of 40 tracks",
