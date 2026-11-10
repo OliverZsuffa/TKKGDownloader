@@ -20,10 +20,10 @@ TKKGDownloader is a read only consumer. It does not scrape sources, search Spoti
 3. Validate its verified Spotify album and ordered individual track mappings.
 4. Use the default yt-dlp provider with exact verified YouTube Music video URLs, or explicitly select the Spotisaver browser provider.
 5. For Spotisaver, open one canonical album in visible Chromium, poll for the real album download button, and use normal website download controls.
-6. Validate every downloaded MP3 against the expected track titles and order.
-7. Automatically merge the episode parts into one MP3 with FFmpeg after every track has passed validation.
+6. For Spotisaver, map every downloaded MP3 to one complete canonical title using exact normalized matching. Reject ambiguity, missing or extra tracks, duplicate audio, and invalid canonical numbering. Record the source mapping and checksums in a manifest, then verify the canonical files again immediately before merging.
+7. Automatically merge the episode parts into one MP3 with FFmpeg only after every track and its manifest entry have passed validation.
 
-Spotisaver mode is intentionally restricted to one episode per invocation. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.\n\nFor a one-time quality investigation, the optional `--diagnostic-dir` mode preserves the Spotisaver archive and source tracks, inspects and fully decodes every source, compares the existing merge against a lossless PCM concatenation encoded once at 320 kbit/s, verifies embedded artwork and ID3 metadata, and creates a lossless review file for every track boundary. This mode runs locally and never replaces the normal episode output.
+Spotisaver mode is intentionally restricted to one episode per invocation. Its manifest remains in memory during normal downloads and is preserved as reports/track-manifest.json in R13 diagnostic mode. Embedded tags are corroborating evidence only and never override TKKGData. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.\n\nFor a one-time quality investigation, the optional `--diagnostic-dir` mode preserves the Spotisaver archive and source tracks, inspects and fully decodes every source, compares the existing merge against a lossless PCM concatenation encoded once at 320 kbit/s, verifies embedded artwork and ID3 metadata, and creates a lossless review file for every track boundary. This mode runs locally and never replaces the normal episode output.
 
 ## Intended environment
 
