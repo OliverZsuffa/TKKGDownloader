@@ -89,3 +89,20 @@ Use mocked browser objects and controllable time. Tests must not use real networ
 ## 8. Documentation and verification
 
 Update README and Knowledge Base logging documentation to describe concise console output and persistent diagnostic logs. Run Python compilation and all unit tests. Inspect the complete diff and CI results. Open a pull request for review. Do not merge until Oliver approves.
+
+
+## 9. Colour and visual hierarchy
+
+Use a restrained semantic colour palette for both stage messages and the progress display. Colour must improve scanability and communicate state, not decorate every line:
+
+- Cyan for neutral informational stages such as opening the browser, starting the download, and the current ETA.
+- Yellow for waiting, queue busy, and retry messages.
+- Green for successful stage completion, completed progress, validation success, and the final output confirmation.
+- Red for errors and failures.
+- Grey or the terminal's dim style for the uncompleted portion of the progress bar and secondary details.
+
+For the progress bar, render completed progress in green and remaining progress in grey. Keep the numeric track count and percentage readable without relying on colour alone. Do not use a rainbow palette, colour browser diagnostics, or colour every piece of text indiscriminately.
+
+Use standard terminal colour capabilities without introducing an unnecessary dependency. Detect whether stdout supports colour and disable ANSI styling for redirected/non-interactive output, dumb terminals, or when the user has set `NO_COLOR`. Ensure colour codes do not interfere with in-place progress updates or tests, and keep all messages understandable in monochrome.
+
+Add tests for semantic colour assignment and colour-disabled output, including `NO_COLOR` and non-interactive stdout.
