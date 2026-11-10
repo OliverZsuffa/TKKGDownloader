@@ -551,6 +551,9 @@ def run_episode_diagnostics(
             f"{pcm_bytes * 3:,} bytes; available: {free_bytes:,} bytes."
         )
 
+    if track_manifest is not None:
+        tracks = validate_track_manifest(tracks, track_manifest)
+
     segments_dir = pcm_dir / "segments"
     segments_dir.mkdir(exist_ok=True)
     pcm_conversion_commands: list[list[str]] = []
