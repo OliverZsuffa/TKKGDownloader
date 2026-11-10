@@ -110,7 +110,7 @@ class _ProgressReporter:
         elapsed = max(0.0, time.monotonic() - self.queue_wait_started)
         if self.interactive:
             self.finish()
-        else:
+        elif elapsed >= 1:
             seconds = int(elapsed)
             print(
                 f"Waiting for download slot... {seconds // 60}m {seconds % 60:02d}s elapsed",
