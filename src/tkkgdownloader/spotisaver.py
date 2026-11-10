@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-import re
+from datetime import datetime
 from pathlib import Path
+import re
+import time
+import traceback
 from typing import Any
 import unicodedata
 
@@ -21,6 +24,47 @@ def _album_title(title: str) -> str:
     return title.split("/", 1)[-1].strip() if "/" in title else title.strip()
 
 
+def _log(message: str, started: float | None = None) -> None:
+    """Print a timestamped, flushed diagnostic line."""
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    elapsed = f" +{time.monotonic() - started:.1f}s" if started is not None else ""
+    print(f"[{timestamp}{elapsed}] {message}", flush=True)
+
+
+def _log_selector_state(page: Any, selector: str) -> int:
+    """Log the count and visible details for a selector, without failing discovery."""
+    try:
+        locator = page.locator(selector)
+        count = locator.count()
+    except Exception as exc:
+        _log(f"Selector diagnostic failed for {selector!r}: {type(exc).__name__}: {exc}")
+        return 0
+
+    _log(f"Selector {selector!r}: {count} match(es)")
+    for index in range(min(count, 5)):
+        candidate = locator.nth(index)
+        try:
+            visible = candidate.is_visible()
+        except Exception as exc:
+            visible = f"error: {type(exc).__name__}: {exc}"
+        try:
+            label = candidate.inner_text(timeout=2_000).strip().replace("\n", " ")[:160]
+        except Exception:
+            label = ""
+        attributes = {}
+        for name in ("id", "class", "aria-label", "title", "onclick"):
+            try:
+                value = candidate.get_attribute(name)
+            except Exception:
+                value = None
+            if value:
+                attributes[name] = value[:180]
+        _log(
+            f"  match {index + 1}: visible={visible!r}, text={label!r}, "
+            f"attributes={attributes!r}"
+        )
+    return count
+
 
 def _wait_for_album_data(page: Any, plan: dict, timeout_ms: int = 120_000) -> None:
     """Wait for Spotisaver's client-side album lookup and tracklist to finish."""
@@ -33,11 +77,11 @@ def _wait_for_album_data(page: Any, plan: dict, timeout_ms: int = 120_000) -> No
     if len(album) < 5 or not track_titles:
         raise RuntimeError("TKKGData does not contain enough album identity data to verify Spotisaver.")
 
-    print(
-        "Waiting for Spotisaver to load the album metadata and complete tracklist "
-        f"(up to {timeout_ms // 1000} seconds)...",
-        flush=True,
+    _log(
+        "Waiting for Spotisaver's client-side album lookup and complete tracklist "
+        f"(timeout {timeout_ms / 1000:.0f}s)..."
     )
+    wait_started = time.monotonic()
     page.wait_for_function(
         """([expectedAlbum, expectedTracks]) => {
             const body = document.body?.innerText || "";
@@ -53,9 +97,14 @@ def _wait_for_album_data(page: Any, plan: dict, timeout_ms: int = 120_000) -> No
         arg=[album, track_titles],
         timeout=timeout_ms,
     )
-    print("Spotisaver album metadata and all expected track titles are loaded.", flush=True)
+    _log(
+        f"Album metadata and all {len(track_titles)} expected track titles are present "
+        f"(waited {time.monotonic() - wait_started:.1f}s)."
+    )
+
 
 def _verify_album_page(page: Any, plan: dict) -> None:
+    _log("Verifying visible album identity and every expected track title...")
     body = page.locator("body").inner_text(timeout=15_000)
     normalized_body = _normalize(body)
     expected_album = _normalize(_album_title(plan["spotify_album_title"]))
@@ -75,17 +124,56 @@ def _verify_album_page(page: Any, plan: dict) -> None:
             "Spotisaver's visible tracklist does not match TKKGData. "
             f"Track titles not found: {preview}. No download was started."
         )
+    _log(f"Album verification passed: {plan['spotify_album_title']!r}, {len(plan['tracks'])} tracks.")
 
 
 def _download_click(page: Any, locator: Any, target: Path, timeout_ms: int) -> Path:
-    with page.expect_download(timeout=timeout_ms) as download_info:
-        locator.click()
+    """Click a visible control and report each stage of the browser download."""
+    started = time.monotonic()
+    click_completed = False
+    _log(f"Preparing browser download; target directory: {target}")
+    try:
+        with page.expect_download(timeout=timeout_ms) as download_info:
+            _log("Issuing Playwright click on the selected download control.")
+            try:
+                locator.click()
+            except Exception as exc:
+                _log(f"CLICK FAILED: {type(exc).__name__}: {exc}", started)
+                raise
+            click_completed = True
+            _log("Click call returned successfully; waiting for browser download event.", started)
+    except Exception as exc:
+        if click_completed:
+            _log(
+                f"DOWNLOAD EVENT FAILED after click: {type(exc).__name__}: {exc}",
+                started,
+            )
+        else:
+            _log(
+                f"DOWNLOAD CONTROL CLICK FAILED before click completion: "
+                f"{type(exc).__name__}: {exc}",
+                started,
+            )
+        raise
+
+    _log("Browser download event received.", started)
     download = download_info.value
     suggested = Path(download.suggested_filename).name
     destination = target / suggested
-    download.save_as(str(destination))
-    if not destination.is_file() or destination.stat().st_size == 0:
+    _log(f"Website suggested filename: {suggested!r}")
+    _log(f"Saving browser download to: {destination}")
+    try:
+        download.save_as(str(destination))
+    except Exception as exc:
+        _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
+        raise
+    if not destination.is_file():
+        raise RuntimeError(f"Browser download did not create the expected file: {destination}")
+    size = destination.stat().st_size
+    _log(f"Saved file size: {size} bytes; elapsed download workflow: {time.monotonic() - started:.1f}s.")
+    if size == 0:
         raise RuntimeError(f"Spotisaver produced an empty download: {suggested}")
+    _log(f"Download validated successfully: {destination}", started)
     return destination
 
 
@@ -130,6 +218,7 @@ def _log_visible_download_controls(page: Any) -> None:
         """elements => elements.slice(0, 30).map(element => ({
             tag: element.tagName.toLowerCase(),
             text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
+            id: element.id || "",
             title: element.getAttribute("title") || "",
             aria: element.getAttribute("aria-label") || "",
             className: typeof element.className === "string" ? element.className : "",
@@ -138,16 +227,12 @@ def _log_visible_download_controls(page: Any) -> None:
         }))"""
     )
     if not controls:
-        print("No visible buttons or links were found.", flush=True)
+        _log("No visible buttons or links were found.")
         return
-    print("Visible page controls (diagnostics):", flush=True)
+    _log(f"Visible page controls (showing {len(controls)} maximum 30):")
     for item in controls:
-        details = ", ".join(
-            f"{key}={value!r}"
-            for key, value in item.items()
-            if value
-        )
-        print(f"  <{item['tag']}> {details}", flush=True)
+        details = ", ".join(f"{key}={value!r}" for key, value in item.items() if value)
+        _log(f"  <{item['tag']}> {details}")
 
 
 def _find_track_download(page: Any, title: str) -> Any | None:
@@ -166,6 +251,7 @@ def _find_track_download(page: Any, title: str) -> Any | None:
         current = current.locator("xpath=..")
     return None
 
+
 def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int = 120_000) -> list[Path]:
     """Download one album through the normal visible website interface."""
     try:
@@ -177,91 +263,144 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
             "py -m playwright install chromium."
         ) from exc
 
+    workflow_started = time.monotonic()
+    stage = "initialization"
     destination.mkdir(parents=True, exist_ok=True)
     album_id = plan["spotify_album_url"].rsplit("/", 1)[-1]
     if not re.fullmatch(r"[A-Za-z0-9]{22}", album_id):
         raise RuntimeError("The Spotify album ID from TKKGData is invalid.")
     url = SPOTISAVER_ALBUM_URL.format(album_id=album_id)
-    print(f"Opening Spotisaver album in visible Chromium: {url}", flush=True)
+    _log(f"Workflow started for {plan.get('spotify_album_title', 'unknown album')!r}.", workflow_started)
+    _log(f"Destination directory: {destination}", workflow_started)
+    _log(f"Launching visible Chromium for {url}", workflow_started)
 
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
+            _log("Visible Chromium launched successfully.", workflow_started)
             page = browser.new_page(accept_downloads=True)
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                stage = "page navigation"
+                _log("Navigating to album page (wait_until=domcontentloaded)...", workflow_started)
+                response = page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                status = getattr(response, "status", None)
+                _log(f"Navigation completed; HTTP status={status!r}.", workflow_started)
+                stage = "document visibility"
                 page.locator("body").wait_for(state="visible", timeout=30_000)
-                _wait_for_album_data(page, plan, timeout_ms=120_000)
+                _log("Document body is visible.", workflow_started)
+
+                stage = "album data loading"
+                _wait_for_album_data(page, plan, timeout_ms=timeout_ms)
+                stage = "album verification"
                 _verify_album_page(page, plan)
-                # Prefer the actual full-playlist action when it is already present.
-                # The separate "Download Playlist" control only scrolls the page.
+
+                stage = "download control discovery"
+                _log("Inspecting the direct album download control first.", workflow_started)
+                _log_selector_state(page, "#downloadAllBtn")
+                _log_selector_state(page, "#downloadAllBtnLabel")
                 album_download = _find_album_download(page)
-                if album_download is None:
+                if album_download is not None:
+                    label = album_download.inner_text(timeout=3_000).strip()
+                    _log(
+                        f"DIRECT-FIRST DECISION: actual album download control is visible "
+                        f"({label!r}); clicking it without scrolling.",
+                        workflow_started,
+                    )
+                else:
+                    _log(
+                        "DIRECT-FIRST DECISION: no verified visible album download control. "
+                        "Checking the intermediate navigation control.",
+                        workflow_started,
+                    )
+                    _log_selector_state(page, "button.btn-playlist-download")
                     navigation = _find_playlist_navigation(page)
                     if navigation is not None:
-                        print(
-                            "The album download action is not visible yet. "
-                            "Clicking the page's Download Playlist navigation control...",
-                            flush=True,
+                        nav_label = navigation.inner_text(timeout=3_000).strip()
+                        _log(
+                            f"Clicking intermediate navigation control {nav_label!r}; "
+                            "this is only used to reveal the action area.",
+                            workflow_started,
                         )
                         navigation.click()
+                        _log("Intermediate navigation click returned; waiting for actual action.", workflow_started)
                         try:
                             page.locator("#downloadAllBtn").wait_for(
                                 state="visible",
                                 timeout=min(timeout_ms, 15_000),
                             )
+                            _log("The direct album download button became visible after navigation.", workflow_started)
                         except PlaywrightTimeoutError:
-                            pass
+                            _log("Timed out waiting for #downloadAllBtn after navigation.", workflow_started)
+                        _log_selector_state(page, "#downloadAllBtn")
                         album_download = _find_album_download(page)
+                    else:
+                        _log("No usable intermediate navigation control was found.", workflow_started)
 
                 if album_download is not None:
                     label = album_download.inner_text(timeout=3_000).strip()
-                    print(
-                        f"Starting Spotisaver album download using visible control: {label!r}",
-                        flush=True,
-                    )
-                    return [_download_click(page, album_download, destination, timeout_ms)]
+                    _log(f"Selected album download control: {label!r}.", workflow_started)
+                    stage = "album download click and browser event"
+                    result = _download_click(page, album_download, destination, timeout_ms)
+                    _log(f"Album download workflow completed: {result.name}", workflow_started)
+                    return [result]
 
-                print(
-                    "No verified album download button was found. Inspecting visible controls "
-                    "before attempting individual track downloads.",
-                    flush=True,
+                stage = "download control diagnostics"
+                _log(
+                    "No verified album download button was found. Collecting visible control "
+                    "inventory before individual track fallback.",
+                    workflow_started,
                 )
                 _log_visible_download_controls(page)
-                print(
-                    "Downloading the visible track controls one at a time.",
-                    flush=True,
-                )
+                _log("Starting sequential individual-track fallback.", workflow_started)
                 files: list[Path] = []
-                for track in plan["tracks"]:
+                for index, track in enumerate(plan["tracks"], start=1):
                     number = track["track_number"]
-                    button = _find_track_download(page, track["spotify_title"])
+                    title = track["spotify_title"]
+                    stage = f"track {number} control discovery"
+                    _log(f"Track fallback {index}/{len(plan['tracks'])}: locating {title!r}.", workflow_started)
+                    button = _find_track_download(page, title)
                     if button is None:
                         raise RuntimeError(
                             f"Could not locate the normal Download control for track "
-                            f"{number}/{plan['track_count']} ({track['spotify_title']})."
+                            f"{number}/{plan['track_count']} ({title})."
                         )
-                    print(f"Downloading track {number}/{plan['track_count']}...", flush=True)
+                    _log(f"Found visible Download control for track {number}: {title!r}.", workflow_started)
+                    stage = f"track {number} download"
                     files.append(_download_click(page, button, destination, timeout_ms))
+                    _log(f"Track {number}/{len(plan['tracks'])} saved: {files[-1].name}", workflow_started)
+                _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files
-            except PlaywrightTimeoutError as exc:
-                raise RuntimeError(
-                    "Spotisaver did not finish loading the expected album data or complete "
-                    "the download within the timeout. The browser was left without further "
-                    "interaction. Check the site and try again."
-                ) from exc
             finally:
+                _log("Closing visible Chromium browser.", workflow_started)
                 browser.close()
-    except RuntimeError:
+    except PlaywrightTimeoutError as exc:
+        _log(
+            f"FAILED during {stage}: Playwright timeout after "
+            f"{time.monotonic() - workflow_started:.1f}s: {exc}",
+            workflow_started,
+        )
+        traceback.print_exc()
+        raise RuntimeError(
+            f"Spotisaver timed out during {stage} after "
+            f"{time.monotonic() - workflow_started:.1f}s: {exc}"
+        ) from exc
+    except RuntimeError as exc:
+        _log(f"FAILED during {stage}: {type(exc).__name__}: {exc}", workflow_started)
+        traceback.print_exc()
         raise
     except Exception as exc:
         message = str(exc)
+        _log(
+            f"FAILED during {stage}: {type(exc).__name__}: {message}",
+            workflow_started,
+        )
+        traceback.print_exc()
         if any(term in message.lower() for term in ("captcha", "rate limit", "too many requests", "access denied")):
             raise RuntimeError(
-                f"Spotisaver displayed an access or rate restriction: {message}. "
+                f"Spotisaver displayed an access or rate restriction during {stage}: {message}. "
                 "The downloader stopped without attempting to bypass it."
             ) from exc
-        raise RuntimeError(f"Spotisaver browser workflow failed: {message}") from exc
+        raise RuntimeError(f"Spotisaver browser workflow failed during {stage}: {message}") from exc
 
 
 def download_and_import(plan: dict, work_dir: Path) -> list[Path]:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 import zipfile
@@ -9,8 +11,10 @@ from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
 from tkkgdownloader.spotisaver import (
     _album_title,
+    _download_click,
     _find_album_download,
     _find_playlist_navigation,
+    _log_selector_state,
     _wait_for_album_data,
 )
 
@@ -165,6 +169,86 @@ class SpotisaverCliTests(unittest.TestCase):
     def test_spotisaver_provider_can_be_selected(self):
         args = build_parser().parse_args(["150", "--provider", "spotisaver"])
         self.assertEqual(args.provider, "spotisaver")
+
+
+class SpotisaverDiagnosticsTests(unittest.TestCase):
+    def test_selector_diagnostic_reports_visibility_and_attributes(self):
+        class DiagnosticLocator:
+            first = None
+
+            def __init__(self):
+                self.first = self
+
+            def count(self):
+                return 1
+
+            def nth(self, index):
+                return self
+
+            def is_visible(self):
+                return True
+
+            def inner_text(self, timeout=None):
+                return "Download entire playlist"
+
+            def get_attribute(self, name):
+                return {
+                    "id": "downloadAllBtn",
+                    "class": "btn-success",
+                    "title": "Download all",
+                }.get(name)
+
+        class DiagnosticPage:
+            def locator(self, selector):
+                self.selector = selector
+                return DiagnosticLocator()
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            count = _log_selector_state(DiagnosticPage(), "#downloadAllBtn")
+        self.assertEqual(count, 1)
+        self.assertIn("visible=True", output.getvalue())
+        self.assertIn("downloadAllBtn", output.getvalue())
+        self.assertIn("Download entire playlist", output.getvalue())
+
+    def test_download_click_reports_and_saves_download(self):
+        class FakeDownload:
+            suggested_filename = "album.zip"
+
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class DownloadContext:
+            value = FakeDownload()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class DownloadPage:
+            def expect_download(self, timeout):
+                self.timeout = timeout
+                return DownloadContext()
+
+        class ClickLocator:
+            clicked = False
+
+            def click(self):
+                self.clicked = True
+
+        with tempfile.TemporaryDirectory() as temp:
+            locator = ClickLocator()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _download_click(DownloadPage(), locator, Path(temp), 5_000)
+            self.assertTrue(locator.clicked)
+            self.assertEqual(result.name, "album.zip")
+            self.assertEqual(result.read_bytes(), b"archive")
+            self.assertIn("Issuing Playwright click", output.getvalue())
+            self.assertIn("Browser download event received", output.getvalue())
+            self.assertIn("Saved file size: 7 bytes", output.getvalue())
 
 
 if __name__ == "__main__":
