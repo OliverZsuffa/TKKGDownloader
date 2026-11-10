@@ -86,6 +86,6 @@ Provide three complementary aspects of output:
 - [ ] Unit tests cover ETA parsing, progress parsing, archive-ready detection, ZIP link or button discovery and click ordering, delayed download events, missing controls, and cancellation.
 - [ ] Compilation and full CI pass.
 
-## Open questions
+## Confirmed final control markup
 
-- The exact DOM markup and selector for the final `Download ZIP` button are not yet available. Start with visible role/name or text discovery scoped to the active modal. If that is insufficient during local testing, ask Oliver to capture the button element HTML from the live modal and refine the selector.
+The live archive-ready modal HTML supplied by Oliver shows that the final `Download ZIP` control is an anchor inside `.zip-ready-card`, with class `.zrc-cta` and a direct download URL. Find it by accessible link name inside the active modal, with `.zip-ready-card a.zrc-cta` as the confirmed fallback. Verify visibility, a non-empty `href`, and that it is not marked `aria-disabled`. Retain compatibility with button markup in case the website changes its implementation.
