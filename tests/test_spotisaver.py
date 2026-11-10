@@ -7,7 +7,12 @@ from pathlib import Path
 
 from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
-from tkkgdownloader.spotisaver import (\n    _album_title,\n    _find_album_download,\n    _find_playlist_navigation,\n    _wait_for_album_data,\n)
+from tkkgdownloader.spotisaver import (
+    _album_title,
+    _find_album_download,
+    _find_playlist_navigation,
+    _wait_for_album_data,
+)
 
 
 def tracks():
