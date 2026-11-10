@@ -100,7 +100,7 @@ class _ProgressReporter:
         line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
         if self.interactive:
             if line != self.queue_wait_last_line:
-                print("\\r" + line, end="", flush=True)
+                print("\r" + line, end="", flush=True)
                 self.active_line = True
                 self.queue_wait_last_line = line
 
