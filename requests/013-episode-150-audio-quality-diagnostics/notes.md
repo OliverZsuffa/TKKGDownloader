@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete on PR #20. Automated verification passed. The real episode 150 Spotisaver download and review remain pending local execution.
+PR #20 was squash merged into main as 118163169a30ddaf560980f3e35f2a2ecb18cd4d. Automated verification passed. The real episode 150 Spotisaver download and review remain pending local execution.
 
 ## Implemented
 
