@@ -171,15 +171,6 @@ def download_episode_spotisaver(
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
     if diagnostic_dir is not None:
-        workspace = diagnostic_dir.expanduser().resolve()
-        if workspace.exists() and any(workspace.iterdir()):
-            raise FileExistsError(
-                f"Diagnostic directory is not empty: {workspace}. "
-                "Choose a new directory so no previous evidence is overwritten."
-            )
-        workspace.mkdir(parents=True, exist_ok=True)
-        source_dir = workspace / "source"
-        source_dir.mkdir()
         try:
             plan = validate_audio_release(episode.audio_release)
         except ValueError as exc:
@@ -190,6 +181,15 @@ def download_episode_spotisaver(
         ffprobe = shutil.which("ffprobe")
         if not ffmpeg or not ffprobe:
             raise RuntimeError("Both 'ffmpeg' and 'ffprobe' must be available on PATH for diagnostics.")
+        workspace = diagnostic_dir.expanduser().resolve()
+        if workspace.exists() and any(workspace.iterdir()):
+            raise FileExistsError(
+                f"Diagnostic directory is not empty: {workspace}. "
+                "Choose a new directory so no previous evidence is overwritten."
+            )
+        workspace.mkdir(parents=True, exist_ok=True)
+        source_dir = workspace / "source"
+        source_dir.mkdir()
         try:
             tracks = download_and_import(plan, source_dir, episode_number=episode.number)
             report_stage("Source tracks validated. Starting quality diagnostics...", "info")
