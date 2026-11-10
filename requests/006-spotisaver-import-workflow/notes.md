@@ -9,3 +9,8 @@
 - Updated README and Knowledge Base.
 - GitHub Actions passed project installation, Python compilation, the live TKKGData contract smoke test, and all 37 unit tests on commit 03fc8889c53bf95a5803ec7e19d49cb306d389de.
 - Real Spotisaver browser behaviour and Windows playback remain unverified. Real Spotisaver behaviour and Windows playback remain unverified.
+
+
+## Follow-up fix: delayed page data
+
+Oliver tested episode 150 and confirmed that Chromium opened the album page but the program checked the page before Spotisaver finished loading its client-side album data. Added an explicit wait of up to 120 seconds for the expected album title and all 40 canonical track titles before verification. Added unit tests for episode-prefix handling and the wait contract. The browser remains visible during this wait.
