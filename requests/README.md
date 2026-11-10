@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [016: Safe audio merging and introductory track diagnostics](016-safe-audio-merging/request.md) — validate source formats and output duration, use PCM fallback when needed, and assess the introductory segment separately.
+
 - [015: Robust Spotisaver track identity](015-robust-spotisaver-track-identity/request.md) — identify tracks through exact filename variants, embedded metadata, and verified album identity without fuzzy automatic matching.
 
 
