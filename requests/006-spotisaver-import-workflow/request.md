@@ -1,91 +1,95 @@
-# Request 006: Spotisaver assisted source and MP3 import workflow
+# Request 006: Spotisaver browser-assisted episode download
 
 ## Status
 
-Proposed. Awaiting Oliver's approval.
+Proposed. Awaiting Oliver's approval of the revised implementation plan.
 
 ## Objective
 
-Investigate whether Spotisaver can be used as a user initiated source for occasional personal TKKG episode preparation, and make TKKGDownloader able to import and validate audio files that Oliver has independently and legitimately obtained.
+Add an occasional, user-initiated Spotisaver download workflow to TKKGDownloader. The intended use is to download one TKKG episode at a time for Oliver's personal listening, using the Spotify album metadata and track mapping already verified in TKKGData.
 
-The target use case is one episode occasionally, not continuous or catalogue wide downloading.
+Oliver states that Spotisaver has explicitly approved this intended use, including browser automation. This permission is user-reported and has not been independently verified in this repository. Implementation must stay within the exact scope Spotisaver approved and its current technical and usage limits.
 
-## Website findings
+## Existing data contract
 
-The official Spotisaver pages describe this workflow:
+TKKGData remains the sole source of truth for:
+- Episode number and title.
+- Spotify album ID and public album URL.
+- Verified track titles, track numbers, order, and expected durations.
+- Verified individual source metadata already published in the dataset.
 
-1. The user supplies a Spotify album, playlist, or track URL.
-2. Spotisaver reads Spotify metadata such as titles, artists, album information, artwork, and track order.
-3. It searches independent external sources for matching audio.
-4. It offers matched MP3 files individually and, on the website, a ZIP option.
-5. The user downloads files through the website.
+The downloader must not independently guess or rewrite canonical track metadata.
 
-Official documentation:
-- https://spotisaver.net/en/album-downloader
-- https://spotisaver.net/en/music-to-mp3
-- https://spotisaver.online/en/terms
+## Proposed Spotisaver workflow
 
-The website states that it does not download, rip, record, or access audio from Spotify. Spotify is used for metadata only. Audio is matched from independent external sources.
+1. Oliver runs the downloader for one episode, for example `py tkkg.py 150`.
+2. TKKGDownloader validates the episode's Spotify album ID and complete track mapping from TKKGData.
+3. Playwright launches a visible Chromium browser and opens the Spotisaver album page generated from that album ID.
+4. The browser workflow waits for the album page to finish loading and verifies that the displayed album and tracklist correspond to the expected episode.
+5. It uses the normal, visible website interface to initiate the website's advertised download option. Prefer the site's ZIP download if it is available and covered by the reported permission. Otherwise download individual tracks sequentially, only if that method is also covered by the permission.
+6. Playwright captures the browser's normal download events and saves the resulting file or files into an isolated temporary working directory.
+7. The downloader validates the downloaded archive and audio files against TKKGData.
+8. Only after every expected track has passed validation does the existing FFmpeg merge pipeline create the combined episode MP3.
 
-The current Terms of Service say the service is for personal, non-commercial use, require users to have the legal right to copy the content, and prohibit bulk downloading. The public feature page advertises album ZIP functionality, but that does not override the Terms of Service. A 40-track episode album must therefore not be automated or treated as permitted bulk use without explicit clarification or permission from Spotisaver and confirmation that the user has the necessary copying rights.
+This is intended for one explicitly requested episode per invocation. No unattended catalogue-wide jobs, parallel album downloads, background monitoring, or automatic retries that could multiply requests.
 
-No public API or documented automation interface was found. Do not reverse engineer private endpoints, evade usage limits, automate website downloads, or bypass access controls.
+## Browser automation requirements
 
-## User experience
+1. Use Playwright for Python, preferably its synchronous API unless the existing codebase gives a clear reason to use asynchronous Playwright.
+2. Launch a visible Chromium browser by default so Oliver can observe the workflow and complete any ordinary user interaction.
+3. Use the public album URL pattern `https://spotisaver.net/en/album/{spotify_album_id}/`, with the album ID taken from validated TKKGData rather than hardcoded.
+4. Use normal rendered-page interactions and Playwright download events. Do not call undocumented private endpoints or reconstruct hidden download APIs.
+5. Do not evade CAPTCHA, login requirements, geographic restrictions, access controls, download limits, or anti-automation protections. If any such control appears, stop and ask Oliver to handle the issue manually or cancel.
+6. Keep downloads sequential. Respect any displayed cooldowns, rate limits, per-account limits, and the specific scope of Spotisaver's approval.
+7. Do not store Spotisaver credentials, browser passwords, or session tokens in the repository or application configuration. If authentication is required, let Oliver handle it interactively in the visible browser.
+8. Add clear timeouts and actionable errors for page load failure, changed page structure, missing album, missing track matches, unavailable download controls, interrupted downloads, and browser closure.
+9. Do not silently fall back to another source if Spotisaver fails. Report the failure and preserve the existing explicit source selection behaviour.
+10. Make browser automation opt-in through a clear provider option if that is the least disruptive CLI design. The implementation plan must confirm the final command syntax against the existing CLI.
 
-The intended eventual workflow, subject to the usage and rights conditions above, is:
+## Download and validation requirements
 
-1. Oliver runs `py tkkg.py 150`.
-2. The downloader displays the Spotify album URL already stored in TKKGData and can open the public Spotisaver page in the browser for manual use.
-3. The user independently obtains only files that the source permits them to copy and download.
-4. The user passes a local MP3 or ZIP file path to TKKGDownloader for import.
-5. The downloader validates the files against the verified Spotify track metadata in TKKGData.
-6. The downloader merges a complete, validated episode using the existing FFmpeg pipeline.
+1. Prefer one ZIP download for the requested album if the website offers it and the reported permission covers it.
+2. If the ZIP option is unavailable, individual track downloads may be used sequentially only if covered by the permission.
+3. Store browser downloads in a temporary directory. Do not write partial tracks into the final output directory.
+4. Safely inspect ZIP contents before extraction. Reject absolute paths, parent traversal, symlinks, nested archives unless explicitly supported, corrupt archives, unsupported file types, and empty files.
+5. Match tracks deterministically using track number and title metadata or filename, normalized against TKKGData. Use duration as a secondary validation signal.
+6. Do not silently guess when multiple files match one track or when a track is missing.
+7. Require exactly one valid file for every expected track. Track count must be data-driven and never hardcoded to 40.
+8. Preserve the original downloaded files until validation and merging finish. Clean up temporary data on success or failure.
+9. Reuse the existing FFmpeg merge pipeline only after complete validation.
+10. Preserve output naming, overwrite protection, confirmation behaviour, and per-episode error reporting.
 
-The application must not log into Spotisaver, automate its download buttons, scrape hidden endpoints, or circumvent site limits.
+## Scope and safeguards
 
-## Functional requirements
-
-1. Keep TKKGData as the sole source of truth for episode metadata and verified Spotify track identity, titles, order, and expected durations.
-2. Add a user initiated browser handoff to the public Spotisaver album page using the Spotify album ID already present in TKKGData.
-3. Do not claim that Spotisaver has a supported API. Do not automate its website or download actions.
-4. Add an import path for user supplied local MP3 files and ZIP archives, independent of how the files were obtained.
-5. Support an explicit input path, for example `py tkkg.py 150 --import-audio "C:\\path\\to\\files.zip"`, subject to CLI design review.
-6. Safely inspect ZIP contents without extracting paths outside a temporary directory. Reject path traversal, unexpected file types, corrupt archives, and empty files.
-7. Match imported files using embedded tags and filenames, with normalized title matching against TKKGData. Use duration as a secondary validation signal.
-8. Do not silently guess when multiple files match one track or when a track is missing. Report the ambiguity and ask the user to correct the input.
-9. Require the complete expected track set in the correct order before merging an episode. Track count must remain data driven and never hardcoded to 40.
-10. Preserve the existing output naming, overwrite protection, confirmation behaviour, FFmpeg merge, and per episode error reporting.
-11. Keep imported originals unchanged. Work on temporary copies and clean up temporary data after success or failure.
-12. Keep the downloader read only with respect to TKKGData.
-13. Document that the user is responsible for having the rights and permissions required to copy imported audio.
-14. Do not automate multi-track downloads from Spotisaver unless Spotisaver explicitly confirms that the intended use is permitted and the user has the required rights.
-
-## Out of scope
-
-- Downloading audio directly from Spotify, Amazon Music, or YouTube Music.
-- Recording protected streams or bypassing DRM or other technical protection.
-- Reverse engineering undocumented Spotisaver endpoints.
-- Automated browser clicking, scraping, or bulk downloading from Spotisaver.
-- Changes to TKKGData or TKKGtracker.
-- Searching for or substituting unverified audio sources.
-- A general media player or GUI.
+- One episode per explicit user invocation.
+- Personal, non-commercial use as stated by Oliver.
+- Browser automation only within the scope Spotisaver explicitly approved.
+- Respect Spotisaver's current terms, written approval, displayed limits, and rate limits.
+- No bulk catalogue scraping or unattended downloads.
+- No reverse engineering of private endpoints.
+- No DRM circumvention or extraction from Spotify, Amazon Music, or YouTube Music.
+- No changes to TKKGData or TKKGtracker.
+- The downloader remains read-only with respect to TKKGData.
 
 ## Acceptance criteria
 
-- [ ] A public Spotisaver album page can be opened through an explicit user action using the Spotify album ID from TKKGData.
-- [ ] The CLI can import a user supplied local MP3 file set or ZIP archive.
-- [ ] ZIP extraction is safe against path traversal and malformed archives.
-- [ ] Imported tracks are matched to the exact expected metadata with deterministic rules.
+- [ ] The CLI can select Spotisaver for one specified episode.
+- [ ] The Spotify album ID is read from validated TKKGData.
+- [ ] Playwright launches a visible browser and opens the correct Spotisaver album page.
+- [ ] The workflow verifies the expected album and tracklist before starting a download.
+- [ ] The workflow captures normal browser download events without private endpoint calls.
+- [ ] ZIP download is supported where available and permitted.
+- [ ] Sequential individual downloads are supported only where permitted.
+- [ ] The workflow stops safely when a CAPTCHA, access restriction, limit, or unexpected interaction is encountered.
+- [ ] Downloaded files are validated deterministically against all expected TKKGData tracks.
 - [ ] Missing, duplicate, ambiguous, corrupt, or unexpected files prevent merging and produce actionable errors.
-- [ ] Track count and ordering are validated dynamically from TKKGData.
 - [ ] The existing FFmpeg merge is reused only after complete validation.
-- [ ] Tests cover successful imports, malformed ZIP files, unsafe paths, duplicate tracks, missing tracks, mismatched titles, duration mismatches, and no-merge-on-failure.
-- [ ] README and Knowledge Base explain the import workflow and its source and rights limitations.
-- [ ] No automated Spotisaver download or hidden endpoint integration is introduced.
+- [ ] Tests cover browser workflow using mocked pages/download events, archive validation, matching, failure handling, and no-merge-on-failure.
+- [ ] CI does not download or redistribute copyrighted recordings and does not depend on Spotisaver being available.
+- [ ] README and Knowledge Base document setup, usage, limitations, and the user-reported permission scope.
 
-## Open questions
+## Open implementation decisions
 
-- Will Spotisaver explicitly confirm that downloading all tracks from one 40-track album is allowed under its current Terms of Service?
-- Does Oliver have a separate legal basis or authorization to make local copies of the specific TKKG recordings?
-- Should import be exposed as a new flag on the existing command or as a separate `import` subcommand?
+- Whether the current CLI should use `--provider spotisaver` or a dedicated subcommand.
+- Whether Spotisaver's ZIP download is available for the target album in the normal browser workflow.
+- Whether the browser should close automatically after a successful download or remain open for inspection. Default proposal: close only the Playwright-launched browser after downloads have completed, unless an error requires user intervention.
