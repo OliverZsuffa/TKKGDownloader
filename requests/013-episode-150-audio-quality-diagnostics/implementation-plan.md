@@ -117,7 +117,30 @@ For every transition:
 
 Also provide a way to inspect the full source tracks independently. Missing audio can occur inside a track, not only at a chapter boundary.
 
-## 6. Produce a clear diagnostic report
+## 6. Extract cover artwork and write final metadata
+
+### Artwork extraction
+
+- Inspect embedded artwork in all 40 source MP3 files using FFprobe.
+- Extract the attached picture from a source part, preferably the first track when it contains valid artwork.
+- If the first track has no artwork, inspect the remaining parts and select a valid embedded cover from one of them.
+- If multiple parts contain different artwork, record the differences and select the cover that is consistent with the episode or album. Do not download an unrelated replacement or generate new artwork.
+- Preserve the extracted image unchanged in the workspace and record its source track, format, dimensions, file size, and checksum.
+- If no part contains embedded artwork, report that clearly and do not silently substitute another image.
+
+### Metadata
+
+- Populate the final MP3's ID3 tags from verified episode and album metadata in TKKGData, supplemented by source tags only where appropriate.
+- Include title, album, artist and album artist when available, and genre, date, and other fields only when supported by reliable source metadata.
+- Set the track number to 1 of 1 for the merged episode file if the tag format supports it. Preserve the original part track numbers in the diagnostic report rather than confusing them with the single merged episode.
+- Embed the selected cover as the ID3 attached picture.
+- Apply tags to the final encoded MP3 candidate, not to the lossless PCM master.
+- Read the tags and attached picture back from the completed MP3 and verify their values, image integrity, and presence.
+- Record the metadata source for each populated field. Do not invent missing values or alter the source tracks.
+
+Use a suitable maintained Python metadata library if one is not already present in the project. Keep metadata writing isolated and covered by tests.
+
+## 7. Produce a clear diagnostic report
 
 Create both JSON and readable text reports.
 
@@ -133,11 +156,13 @@ The report must include:
 - Re-encoded candidate command and result.
 - Output integrity and duration comparisons.
 - All 39 boundary timestamps and review excerpt locations.
+- Artwork source track, extracted image details, checksum, and final embedded-artwork verification.
+- Final ID3 metadata values, their sources, and read-back validation.
 - A conclusion separating confirmed source problems, merge-specific problems, and inconclusive observations.
 
 The console should show meaningful stages and elapsed time without printing excessive per-second output. Long processing stages should report periodic progress or heartbeats.
 
-## 7. Safety and failure handling
+## 8. Safety and failure handling
 
 - Never modify the downloaded ZIP or source MP3 files.
 - Never overwrite an existing final episode MP3.
@@ -148,7 +173,7 @@ The console should show meaningful stages and elapsed time without printing exce
 - Handle Ctrl+C without deleting the persistent diagnostic workspace.
 - Do not automatically delete large intermediate files after success. Cleanup requires Oliver's later approval.
 
-## 8. Tests
+## 9. Tests
 
 Add automated tests for:
 
@@ -164,12 +189,15 @@ Add automated tests for:
 - Duration comparison with a defined tolerance.
 - Boundary timestamp calculation and excerpt indexing.
 - Report generation with failed and suspicious tracks.
+- Artwork extraction when present on the first track, another track, multiple tracks, or no track.
+- Cover image integrity and metadata read-back validation.
+- ID3 metadata writing from verified values, including missing optional fields.
 - No source mutation and no overwrite of an existing final MP3.
 - Ctrl+C preserving the diagnostic workspace.
 
 Use short synthetic audio fixtures generated locally for unit tests. Tests must not contact Spotisaver or download real episode audio.
 
-## 9. Local execution and acceptance
+## 10. Local execution and acceptance
 
 After implementation and approval:
 
@@ -179,10 +207,12 @@ After implementation and approval:
 4. Confirm all 40 tracks match TKKGData and all source files are retained.
 5. Complete the full per-track decode and metadata inspection.
 6. Generate both merge candidates, the PCM master, the reports, and all 39 boundary excerpts.
-7. Review every flagged boundary and compare the transition review audio for all 39 boundaries.
-8. Report the findings and recommend the best candidate. Do not overwrite or replace the user's existing episode file without explicit approval.
-9. Keep the diagnostic workspace intact until Oliver confirms that the chosen file is satisfactory.
+7. Extract and inspect cover artwork from the source parts, then embed and verify it in the selected final MP3.
+8. Apply and verify episode metadata from TKKGData and reliable source tags.
+9. Review every flagged boundary and compare the transition review audio for all 39 boundaries.
+10. Report the findings and recommend the best candidate. Do not overwrite or replace the user's existing episode file without explicit approval.
+11. Keep the diagnostic workspace intact until Oliver confirms that the chosen file is satisfactory.
 
 ## Implementation boundaries
 
-Expected changes are limited to the CLI argument handling, Spotisaver download workspace handling, a new audio diagnostics module, focused tests, and concise usage documentation. Do not change the default merge algorithm or TKKGData contract as part of this request.
+Expected changes are limited to the CLI argument handling, Spotisaver download workspace handling, a new audio diagnostics module, artwork extraction and ID3 metadata handling, focused tests, and concise usage documentation. Do not change the default merge algorithm or TKKGData contract as part of this request.
