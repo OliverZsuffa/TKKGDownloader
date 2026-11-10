@@ -250,6 +250,9 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             "channels": stream.get("channels"),
             "channel_layout": stream.get("channel_layout"),
             "start_time": stream.get("start_time"),
+            "probe_command": [
+                ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)
+            ],
             "decode_command": decode["command"],
             "decode_returncode": decode["returncode"],
             "decode_stderr": decode["stderr"],
@@ -302,6 +305,10 @@ def _validate_output(path: Path, ffmpeg: str, ffprobe: str) -> dict[str, Any]:
         "bit_rate": _audio_stream(probe).get("bit_rate") or probe.get("format", {}).get("bit_rate"),
         "sample_rate": _audio_stream(probe).get("sample_rate"),
         "channels": _audio_stream(probe).get("channels"),
+        "ffprobe_command": [
+            ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)
+        ],
+        "decode_command": decode["command"],
         "decode_returncode": decode["returncode"],
         "decode_stderr": decode["stderr"],
     }
@@ -417,8 +424,13 @@ def run_episode_diagnostics(
             channels[channel_count] = channels.get(channel_count, 0) + 1
         except (TypeError, ValueError):
             continue
-    sample_rate = max(rates, key=rates.get) if rates else 44100
-    channel_count = max(channels, key=channels.get) if channels else 2
+    sample_rate = max(rates) if rates else 44100
+    channel_count = max(channels) if channels else 2
+    source_formats = sorted({
+        (int(item["sample_rate"]), int(item["channels"]))
+        for item in source_records
+        if item["sample_rate"] and item["channels"]
+    })
     pcm_bytes = int(sum(durations) * sample_rate * channel_count * 3)
     free_bytes = shutil.disk_usage(workspace).free
     if free_bytes < pcm_bytes * 3:
@@ -447,12 +459,12 @@ def run_episode_diagnostics(
     master = pcm_dir / f"episode-{episode.number:03d}-master.wav"
     if master.exists():
         raise FileExistsError(master)
-    result = _run([
+    pcm_master_result = _run([
         ffmpeg, "-hide_banner", "-v", "error", "-y", "-f", "concat", "-safe", "0",
         "-i", str(pcm_list), "-c:a", "pcm_s24le", str(master)
     ])
-    if result["returncode"] != 0:
-        raise RuntimeError(f"PCM master concatenation failed: {result['stderr']}")
+    if pcm_master_result["returncode"] != 0:
+        raise RuntimeError(f"PCM master concatenation failed: {pcm_master_result['stderr']}")
     pcm_list.unlink(missing_ok=True)
     for wav in wavs:
         wav.unlink(missing_ok=True)
@@ -462,12 +474,12 @@ def run_episode_diagnostics(
     encoded = candidates / f"episode-{episode.number:03d}-pcm-320k.mp3"
     if encoded.exists():
         raise FileExistsError(encoded)
-    result = _run([
+    encode_result = _run([
         ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(master),
         "-c:a", "libmp3lame", "-b:a", "320k", str(encoded)
     ])
-    if result["returncode"] != 0:
-        raise RuntimeError(f"320 kbit/s MP3 encoding failed: {result['stderr']}")
+    if encode_result["returncode"] != 0:
+        raise RuntimeError(f"320 kbit/s MP3 encoding failed: {encode_result['stderr']}")
     encoded_result = _validate_output(encoded, ffmpeg, ffprobe)
     metadata = _write_metadata(encoded, episode, plan, tracks, artwork)
     encoded_result["metadata"] = metadata
@@ -478,8 +490,18 @@ def run_episode_diagnostics(
         "episode": {"number": episode.number, "title": episode.title},
         "track_count": len(tracks),
         "tool_versions": versions,
+        "source_formats": [
+            {"sample_rate": rate, "channels": count} for rate, count in source_formats
+        ],
+        "pcm_selection_policy": (
+            "Preserve the shared native sample rate and channel count when all sources agree; "
+            "otherwise use the highest source sample rate and channel count to avoid downsampling "
+            "or downmixing source material."
+        ),
         "pcm_parameters": {"sample_rate": sample_rate, "channels": channel_count, "sample_format": "pcm_s24le"},
         "pcm_conversion_commands": pcm_conversion_commands,
+        "pcm_master_command": pcm_master_result["command"],
+        "pcm_encode_command": encode_result["command"],
         "source_duration_sum_seconds": expected_duration,
         "stream_copy": stream_result,
         "pcm_master": master_result,
