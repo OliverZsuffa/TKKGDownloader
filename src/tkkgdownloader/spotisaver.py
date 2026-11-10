@@ -584,7 +584,7 @@ def _download_click(
 
         if snapshot:
             combined_for_acceptance = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
-            if progress_reporter.queue_wait_started is not None and (
+            if not queue_busy and progress_reporter.queue_wait_started is not None and (
                 _parse_track_progress(snapshot) is not None
                 or re.search(r"creating ZIP archive|ZIP archive created", combined_for_acceptance, re.I)
             ):
