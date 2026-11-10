@@ -155,6 +155,36 @@ class DiagnosticIntegrationTests(unittest.TestCase):
             self.assertEqual(len(tracks), 2)
             self.assertTrue(all(path.is_file() for path in tracks))
 
+    def test_corrupt_source_writes_failure_report_and_preserves_every_track(self):
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tracks_dir = root / "source" / "tracks"
+            tracks_dir.mkdir(parents=True)
+            good = tracks_dir / "01 - good.mp3"
+            bad = tracks_dir / "02 - damaged.mp3"
+            result = subprocess.run([
+                ffmpeg, "-hide_banner", "-v", "error", "-y",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                "-c:a", "libmp3lame", "-b:a", "192k", str(good),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            bad.write_bytes(b"this is not an MP3 file")
+            episode = SimpleNamespace(number=150, title="Damaged source test")
+            with self.assertRaisesRegex(RuntimeError, "failed probing or a complete decode"):
+                run_episode_diagnostics(
+                    episode, {"track_count": 2, "spotify_album_title": "Test album"},
+                    [good, bad], root / "workspace", ffmpeg=ffmpeg, ffprobe=ffprobe,
+                )
+            report_path = root / "workspace" / "reports" / "merge-comparison.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "source_validation_failed")
+            self.assertFalse(report["candidates_generated"])
+            self.assertTrue(good.is_file())
+            self.assertTrue(bad.is_file())
+            self.assertFalse((root / "workspace" / "candidates").glob("*.mp3").__next__() if list((root / "workspace" / "candidates").glob("*.mp3")) else False)
+
 
 if __name__ == "__main__":
     unittest.main()
