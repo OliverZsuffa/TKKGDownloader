@@ -510,7 +510,10 @@ def run_episode_diagnostics(
         raise FileExistsError(stream_copy)
     from .merger import merge_tracks
     stream_merge_details: dict[str, Any] = {}
-    merge_tracks(tracks, stream_copy, ffmpeg=ffmpeg, diagnostics=stream_merge_details)
+    merge_tracks(
+        tracks, stream_copy, ffmpeg=ffmpeg, diagnostics=stream_merge_details,
+        manifest=track_manifest,
+    )
     stream_result = _validate_output(stream_copy, ffmpeg, ffprobe)
     stream_result["merge_details"] = stream_merge_details
 
