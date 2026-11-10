@@ -16,6 +16,12 @@ The process must be allowed to run locally for as long as necessary. It must not
 
 ## Functional requirements
 
+- Extract the embedded cover artwork from the downloaded part files. Inspect the available parts rather than assuming every part contains artwork. If multiple parts contain artwork, compare them and use a consistent valid cover from the episode. Preserve the extracted original image as a separate file.
+- Embed the selected cover artwork in the final MP3 as standard ID3 attached-picture metadata.
+- Write complete, accurate MP3 metadata using the canonical episode and album information available from TKKGData. At minimum include title, album, artist or album artist when supplied by the dataset, track number where meaningful for the merged episode, and genre or date only when supported by source metadata. Do not invent missing values.
+- Verify the final ID3 tags and embedded cover after encoding by reading them back from the finished MP3. Record the metadata and artwork validation in the report.
+- Keep the original source tags and artwork evidence in the diagnostic report. Do not modify source files.
+
 - Use the canonical episode 150 metadata and exact 40-track order from TKKGData.
 - Use the existing visible Spotisaver browser workflow and its current archive and track validation. Do not weaken or bypass any website controls or existing validation.
 - Preserve the original downloaded ZIP, the extracted raw MP3 files, and the canonically numbered validated MP3 files.
