@@ -197,18 +197,18 @@ def _write_metadata(mp3: Path, episode: Any, plan: dict[str, Any], tracks: list[
 def _volume_metrics(path: Path, ffmpeg: str, *, silence_seconds: int = 5) -> dict[str, Any]:
     volume = _run([
         ffmpeg, "-hide_banner", "-i", str(path),
-        "-af", "volumedetect", "-f", "null", "-"
+        "-af", "astats=metadata=0:reset=0", "-f", "null", "-"
     ])
     import re
-    mean = re.search(r"mean_volume:\s*(-?[0-9.]+)\s*dB", volume["stderr"])
-    peak = re.search(r"max_volume:\s*(-?[0-9.]+)\s*dB", volume["stderr"])
+    rms = re.search(r"RMS level dB:\s*(-?[0-9.]+)", volume["stderr"])
+    peak = re.search(r"Peak level dB:\s*(-?[0-9.]+)", volume["stderr"])
     silence = _run([
         ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
         "-af", f"silencedetect=noise=-60dB:d={silence_seconds}", "-f", "null", "-"
     ])
     return {
-        "mean_volume_db": float(mean.group(1)) if mean else None,
-        "max_volume_db": float(peak.group(1)) if peak else None,
+        "rms_level_db": float(rms.group(1)) if rms else None,
+        "peak_level_db": float(peak.group(1)) if peak else None,
         "volume_command": volume["command"],
         "volume_returncode": volume["returncode"],
         "volume_stderr": volume["stderr"],
