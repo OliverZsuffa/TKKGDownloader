@@ -8,13 +8,13 @@ The current implementation searches immediately for a button or link with an acc
 
 ## Proposed implementation
 
-1. After album and tracklist verification, explicitly locate the playlist navigation control using the observed stable selector `button.btn-playlist-download`, with the visible text `Download Playlist` as a secondary check.
-2. Click it through Playwright's normal visible interaction. Wait for the action area to become visible, using a bounded wait rather than a fixed sleep.
-3. Add diagnostics for visible buttons and links in the action area. Log role, accessible name, visible text, title, aria-label, class, and relevant href/download attributes. Keep diagnostics concise and avoid dumping the entire page or unrelated content.
-4. Identify the actual album ZIP action and individual track actions from the revealed action area. Prefer semantic role/name and explicit attributes, with observed DOM structure as a fallback. Do not guess that the scroll button is a download.
-5. Before clicking a candidate, report which control was selected. After clicking, verify a real browser download event and non-empty saved file. If the site uses a different documented visible interaction, fail with the diagnostics instead of silently claiming success.
+1. After album and tracklist verification, first locate the actual playlist download control using `#downloadAllBtn` and verify its visible label is `Download entire playlist`.
+2. If that control is already visible, click it directly. Do not click the scroll control or perform unnecessary scrolling.
+3. Only if the actual download control is not visible, locate `button.btn-playlist-download` with visible text `Download Playlist`, click it through normal Playwright interaction, and wait a bounded time for `#downloadAllBtn` to become visible. Do not use fixed sleeps.
+4. Add concise diagnostics for visible buttons and links if the expected download action still cannot be found. Include tag, visible text, title, aria-label, class, href, and download attributes.
+5. Before clicking, report which actual download control was selected. Verify a real browser download event and non-empty saved file.
 6. Preserve current album and tracklist validation, ZIP safety checks, track matching, one-episode limit, and existing FFmpeg merge workflow.
-7. Add unit tests for selector choice, diagnostics formatting, and failure when no actual download control is found. Use mocked Playwright objects. Do not perform real downloads in CI.
+7. Add mocked unit tests for direct button priority, scroll fallback selection, and missing or hidden controls. Do not perform real downloads in CI.
 8. Update README and Knowledge Base/request documentation.
 
 ## Scope and constraints
