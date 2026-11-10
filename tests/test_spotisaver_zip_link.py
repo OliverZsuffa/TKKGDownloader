@@ -72,7 +72,7 @@ class FakeModal:
 
     def get_by_role(self, role, name):
         if not self.role_lookup:
-            raise RuntimeError("Role lookup unavailable")
+            raise ValueError("Role lookup unavailable")
         if role == "link":
             return FakeCollection(self.links)
         if role == "button":
