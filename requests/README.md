@@ -34,7 +34,9 @@ Requests define what the project should do. Implementation plans define how an a
 - [003: Album count and progress](003-album-count-and-progress/implementation-plan.md)
 - [001: Episode downloader](001-episode-downloader/request.md)
 
-- [017: Production metadata and download output polish](017-production-metadata-and-download-polish/request.md) — embed and verify source artwork and metadata in normal downloads, make final file publication safe, and simplify ETA and queue waiting output.\n\n## Naming
+- [017: Production metadata and download output polish](017-production-metadata-and-download-polish/request.md) — embed and verify source artwork and metadata in normal downloads, make final file publication safe, and simplify ETA and queue waiting output.
+
+## Naming
 
 Use NNN-short-description for request folders, for example 001-episode-downloader.
 
