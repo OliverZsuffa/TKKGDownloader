@@ -239,6 +239,19 @@ def _duration(probe: dict[str, Any]) -> float:
     return float(value) if value is not None else 0.0
 
 
+def _duration_flags(track_number: int, duration: float, ordinary_median: float) -> list[str]:
+    """Apply normal segment thresholds separately from the introductory track."""
+    if not ordinary_median:
+        return []
+    if track_number == 1:
+        if duration < 5 or duration > max(180, ordinary_median * 3):
+            return ["intro_duration_outlier"]
+        return []
+    if abs(duration - ordinary_median) > max(30, ordinary_median * 0.2):
+        return ["duration_outlier"]
+    return []
+
+
 def _inspect_sources(
     tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Path,
     track_manifest: dict[str, Any] | None = None,
