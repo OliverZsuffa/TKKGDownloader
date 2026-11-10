@@ -94,6 +94,7 @@ def _extract_artwork(tracks: list[Path], artwork_dir: Path) -> dict[str, Any]:
     artwork_dir.mkdir(parents=True, exist_ok=True)
     found: list[dict[str, Any]] = []
     chosen: dict[str, Any] | None = None
+    saved_hashes: set[str] = set()
     for path in tracks:
         for picture in _id3(path).getall("APIC"):
             data = bytes(picture.data)
@@ -111,17 +112,22 @@ def _extract_artwork(tracks: list[Path], artwork_dir: Path) -> dict[str, Any]:
                 "width": width,
                 "height": height,
             }
-            found.append(record)
-            if chosen is None:
+            if digest not in saved_hashes:
                 extension = {"image/jpeg": ".jpg", "image/png": ".png"}.get(mime, ".img")
-                target = artwork_dir / f"cover-original{extension}"
+                target = artwork_dir / f"cover-source-track-{int(path.stem.split(' - ', 1)[0]):02d}{extension}"
                 target.write_bytes(data)
-                chosen = {**record, "path": str(target)}
+                record["path"] = str(target)
+                saved_hashes.add(digest)
+                if chosen is None:
+                    chosen = {**record, "path": str(target)}
+            else:
+                record["duplicate_of_sha256"] = digest
+            found.append(record)
     result = {
         "artwork_found": bool(found),
         "pictures": found,
         "selected": chosen,
-        "selection_policy": "first valid embedded picture in canonical track order",
+        "selection_policy": "first valid embedded picture in canonical track order; every distinct source image is preserved for review",
     }
     (artwork_dir / "cover-info.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     return result
@@ -276,7 +282,10 @@ def _validate_output(path: Path, ffmpeg: str, ffprobe: str) -> dict[str, Any]:
     }
 
 
-def _make_boundaries(tracks: list[Path], durations: list[float], ffmpeg: str, review: Path) -> list[dict[str, Any]]:
+def _make_boundaries(
+    tracks: list[Path], durations: list[float], ffmpeg: str, review: Path,
+    sample_rate: int, channels: int,
+) -> list[dict[str, Any]]:
     review.mkdir(parents=True, exist_ok=True)
     clips: list[Path] = []
     boundaries: list[dict[str, Any]] = []
@@ -295,6 +304,7 @@ def _make_boundaries(tracks: list[Path], durations: list[float], ffmpeg: str, re
             result = _run([
                 ffmpeg, "-hide_banner", "-v", "error", "-y", "-ss", f"{start:.6f}",
                 "-i", str(source), "-t", f"{length:.6f}", "-vn",
+                "-ar", str(sample_rate), "-ac", str(channels),
                 "-acodec", "pcm_s24le", str(output)
             ])
             if result["returncode"] != 0 or not output.is_file():
@@ -428,7 +438,7 @@ def run_episode_diagnostics(
     encoded_result = _validate_output(encoded, ffmpeg, ffprobe)
     metadata = _write_metadata(encoded, episode, plan, tracks, artwork)
     encoded_result["metadata"] = metadata
-    boundaries = _make_boundaries(tracks, durations, ffmpeg, review)
+    boundaries = _make_boundaries(tracks, durations, ffmpeg, review, sample_rate, channel_count)
 
     expected_duration = sum(durations)
     comparison = {
