@@ -16,6 +16,7 @@ from tkkgdownloader.spotisaver import (
     _find_playlist_navigation,
     _log_selector_state,
     _wait_for_album_data,
+    _wait_for_album_download,
 )
 
 
@@ -123,6 +124,9 @@ class FakeLocator:
     def is_visible(self):
         return self.visible
 
+    def is_enabled(self):
+        return True
+
     def inner_text(self, timeout=None):
         return self.label
 
@@ -144,6 +148,9 @@ class FakePage:
     def get_by_role(self, role, name):
         return FakeLocator('', visible=False)
 
+    def wait_for_timeout(self, timeout):
+        self.waited = getattr(self, 'waited', 0) + timeout
+
 class SpotisaverDownloadControlTests(unittest.TestCase):
     def test_prefers_visible_entire_playlist_button(self):
         button = FakeLocator('Download entire playlist')
@@ -152,6 +159,29 @@ class SpotisaverDownloadControlTests(unittest.TestCase):
     def test_does_not_select_hidden_playlist_button(self):
         button = FakeLocator('Download entire playlist', visible=False)
         self.assertIsNone(_find_album_download(FakePage(direct=button)))
+
+    def test_polls_until_direct_button_becomes_visible(self):
+        class AppearingLocator(FakeLocator):
+            def __init__(self):
+                super().__init__('Download entire playlist', visible=False)
+                self.checks = 0
+
+            def is_visible(self):
+                self.checks += 1
+                self.visible = self.checks >= 3
+                return self.visible
+
+        button = AppearingLocator()
+        page = FakePage(direct=button)
+        result = _wait_for_album_download(page, timeout_ms=5_000, poll_interval_ms=1_000)
+        self.assertIs(result, button)
+        self.assertEqual(page.waited, 2_000)
+
+    def test_times_out_without_clicking_or_selecting_scroll_control(self):
+        page = FakePage(direct=FakeLocator('Download entire playlist', visible=False))
+        result = _wait_for_album_download(page, timeout_ms=2_000, poll_interval_ms=1_000)
+        self.assertIsNone(result)
+        self.assertEqual(page.waited, 2_000)
 
     def test_finds_scroll_control_only_as_fallback(self):
         button = FakeLocator('Download Playlist')
