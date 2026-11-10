@@ -165,10 +165,42 @@ def download_episode_spotisaver(
     output_dir: Path,
     *,
     overwrite: bool = False,
+    diagnostic_dir: Path | None = None,
 ) -> Path:
-    """Download one episode through Spotisaver's normal browser interface."""
+    """Download one episode through Spotisaver, optionally retaining a full diagnostic workspace."""
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
+    if diagnostic_dir is not None:
+        workspace = diagnostic_dir.expanduser().resolve()
+        if workspace.exists() and any(workspace.iterdir()):
+            raise FileExistsError(
+                f"Diagnostic directory is not empty: {workspace}. "
+                "Choose a new directory so no previous evidence is overwritten."
+            )
+        workspace.mkdir(parents=True, exist_ok=True)
+        source_dir = workspace / "source"
+        source_dir.mkdir()
+        try:
+            plan = validate_audio_release(episode.audio_release)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}"
+            ) from exc
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:
+            raise RuntimeError("Both 'ffmpeg' and 'ffprobe' must be available on PATH for diagnostics.")
+        try:
+            tracks = download_and_import(plan, source_dir, episode_number=episode.number)
+            report_stage("Source tracks validated. Starting quality diagnostics...", "info")
+            from .audio_diagnostics import run_episode_diagnostics
+            report = run_episode_diagnostics(
+                episode, plan, tracks, workspace, ffmpeg=ffmpeg, ffprobe=ffprobe
+            )
+            report_stage(f"Diagnostics complete. Report: {report}", "success")
+            return report
+        finally:
+            finish_console_output()
     if final_path.exists() and not overwrite:
         print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
         return final_path
