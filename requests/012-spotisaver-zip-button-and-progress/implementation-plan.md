@@ -59,7 +59,13 @@ The event may arrive immediately after the click, so listener registration must 
 
 Introduce a small formatting/reporting layer rather than scattering print statements through polling code.
 
-Default output should be concise and human-readable. Emit a line when a meaningful state changes, and a short heartbeat every 15 seconds. Include available values such as track count, percentage, ETA, current phase, attempt number, and elapsed time.
+Default output should use a live terminal progress bar, similar to pip, updating the same line in place rather than printing a new line for every poll. The bar should include completed/total tracks, percentage, and ETA when available. For example:
+
+```text
+Spotisaver  [███████████████░░░░░]  30/40 tracks  75%  ETA 1m 32s
+```
+
+When the terminal is not interactive, fall back to concise periodic progress lines. Finish the progress line cleanly before emitting stage messages. Emit short messages for meaningful state changes and retain a concise 15-second heartbeat where useful. Include available values such as track count, percentage, ETA, current phase, attempt number, and elapsed time.
 
 Example:
 
@@ -86,6 +92,8 @@ Retain detailed diagnostics for selector decisions, modal transitions, retry dec
 ## 6. Tests
 
 Add focused tests for:
+
+- Progress-bar rendering, in-place updates, line finalization, and non-interactive fallback.
 
 - ETA extraction from the supplied DOM structure.
 - Missing, hidden, malformed, and changing ETA values.
