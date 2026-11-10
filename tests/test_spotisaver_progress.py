@@ -171,8 +171,8 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.start_queue_wait()
             reporter.update_queue_wait()
             reporter.finish_queue_wait()
-        self.assertEqual(output.getvalue().count("\\r"), 1)
-        self.assertNotIn("\\n", output.getvalue())
+        self.assertEqual(output.getvalue().count("\r"), 1)
+        self.assertEqual(output.getvalue().count("\n"), 1)
 
     def test_finds_unique_visible_enabled_zip_button(self):
         button = FakeButton("Download ZIP")
