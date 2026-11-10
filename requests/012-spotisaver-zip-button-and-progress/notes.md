@@ -32,7 +32,7 @@ Approved by Oliver on 2026-11-10. Implementation is on `implement/spotisaver-zip
 
 ## Verification status
 
-Automated tests and CI are pending. No live Spotisaver download has been performed with this implementation.
+GitHub Actions run [42814681246](https://github.com/OliverZsuffa/TKKGDownloader/actions/runs/42814681246) passed. Python compilation passed, the published TKKGData contract smoke test passed, and all 63 unit tests passed, including the new final ZIP click and download-event test. No live Spotisaver download has been performed with this implementation yet.
 
 ## Verification status
 
