@@ -94,11 +94,11 @@ def _find_album_download(page: Any) -> Any | None:
     direct = page.locator("#downloadAllBtn")
     if direct.count() and direct.first.is_visible():
         label = direct.first.inner_text(timeout=3_000).strip()
-        if re.search(r"download\\s+entire\\s+playlist", label, re.I):
+        if re.search(r"download\s+entire\s+playlist", label, re.I):
             return direct.first
 
     patterns = re.compile(
-        r"(download\\s*(all|album|playlist|zip)|album\\s*download|download\\s*as\\s*zip)",
+        r"(download\s*(all|album|playlist|zip)|album\s*download|download\s*as\s*zip)",
         re.I,
     )
     for role in ("button", "link"):
@@ -121,7 +121,7 @@ def _find_playlist_navigation(page: Any) -> Any | None:
     if not candidate.is_visible():
         return None
     label = candidate.inner_text(timeout=3_000).strip()
-    return candidate if re.search(r"download\\s+playlist", label, re.I) else None
+    return candidate if re.search(r"download\s+playlist", label, re.I) else None
 
 
 def _log_visible_download_controls(page: Any) -> None:
@@ -129,7 +129,7 @@ def _log_visible_download_controls(page: Any) -> None:
     controls = page.locator("button:visible, a:visible").evaluate_all(
         """elements => elements.slice(0, 30).map(element => ({
             tag: element.tagName.toLowerCase(),
-            text: (element.innerText || element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 100),
+            text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
             title: element.getAttribute("title") || "",
             aria: element.getAttribute("aria-label") || "",
             className: typeof element.className === "string" ? element.className : "",
