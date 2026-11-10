@@ -195,41 +195,86 @@ class _ProgressReporter:
 
 
 def _find_zip_download_button(page: Any) -> Any | None:
-    """Find one visible, enabled Download ZIP button inside the active modal."""
+    """Find the unique visible Download ZIP link or button inside the active modal."""
     modal = page.locator(".modal.show")
     if not modal.count() or not modal.first.is_visible():
         return None
 
+    # Spotisaver currently renders the final action as an anchor inside
+    # .zip-ready-card, not as a button. Prefer its accessible link semantics.
     try:
-        buttons = modal.first.get_by_role("button", name=re.compile(r"^\s*Download ZIP\s*$", re.I))
-        count = buttons.count()
-        if count == 1:
-            candidate = buttons.first
-            return candidate if candidate.is_visible() and candidate.is_enabled() else None
+        links = modal.first.get_by_role("link", name=re.compile(r"^\\s*Download ZIP\\s*$", re.I))
+        count = links.count()
         if count > 1:
-            raise RuntimeError(f"Found {count} matching Download ZIP buttons in the active modal.")
+            raise RuntimeError(f"Found {count} matching Download ZIP links in the active modal.")
+        if count == 1:
+            candidate = links.first
+            href = candidate.get_attribute("href")
+            disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
+            if candidate.is_visible() and href and not disabled:
+                return candidate
+            return None
     except RuntimeError:
         raise
     except Exception:
         pass
 
-    # Accessible-name lookup can miss sites whose visible label is assembled
-    # from nested spans. Fall back to exact rendered button text in this modal.
+    # Fall back to the exact class observed in the supplied ready-card markup.
+    try:
+        links = modal.first.locator(".zip-ready-card a.zrc-cta")
+        matches = []
+        for index in range(links.count()):
+            candidate = links.nth(index)
+            try:
+                label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+                href = candidate.get_attribute("href")
+                disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
+                if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
+                    matches.append(candidate)
+            except Exception:
+                continue
+        if len(matches) > 1:
+            raise RuntimeError(f"Found {len(matches)} matching Download ZIP links in the active modal.")
+        if len(matches) == 1:
+            candidate = matches[0]
+            return candidate if candidate.is_visible() else None
+    except RuntimeError:
+        raise
+    except Exception:
+        # Older page versions and test doubles may not expose the ready-card
+        # selector. Continue to the semantic button fallback in that case.
+        pass
+
+    # Retain compatibility with a site version that renders a real button.
+    try:
+        buttons = modal.first.get_by_role("button", name=re.compile(r"^\\s*Download ZIP\\s*$", re.I))
+        count = buttons.count()
+        if count > 1:
+            raise RuntimeError(f"Found {count} matching Download ZIP buttons in the active modal.")
+        if count == 1:
+            candidate = buttons.first
+            return candidate if candidate.is_visible() and candidate.is_enabled() else None
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
     buttons = modal.first.locator("button")
     matches = []
     for index in range(buttons.count()):
         candidate = buttons.nth(index)
         try:
-            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
             if re.fullmatch(r"Download ZIP", label, re.I):
                 matches.append(candidate)
         except Exception:
             continue
-    if len(matches) != 1:
+    if len(matches) > 1:
+        raise RuntimeError(f"Found {len(matches)} matching Download ZIP buttons in the active modal.")
+    if not matches:
         return None
     candidate = matches[0]
     return candidate if candidate.is_visible() and candidate.is_enabled() else None
-
 
 def _queue_retry_seconds(snapshot: dict[str, str]) -> int | None:
     """Extract a retry delay stated in the visible queue notice."""
