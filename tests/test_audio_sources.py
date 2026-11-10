@@ -1,10 +1,6 @@
 import unittest
 
-from tkkgdownloader.audio_sources import (
-    build_individual_track_queries,
-    build_playlist_query,
-    validate_audio_release,
-)
+from tkkgdownloader.audio_sources import validate_audio_release
 
 
 def make_audio_release(with_playlist=True):
@@ -20,8 +16,8 @@ def make_audio_release(with_playlist=True):
         }
     tracks = []
     for number in (1, 2):
-        spotify_id = f"000000000000000000000{number}"
-        video_id = f"videoid000{number}"
+        spotify_id = f"{number:022d}"
+        video_id = f"videoid{number:04d}"
         tracks.append({
             "track_number": number,
             "spotify_title": f"Teil {number:02d}",
@@ -41,41 +37,40 @@ def make_audio_release(with_playlist=True):
             "title": "150/Heiße Nächte im Dezember",
             "track_count": 2,
         },
-        "youtube_music": {
-            "playlist": playlist,
-            "tracks": tracks,
-            "track_count": 2,
-        },
-        "verification": {
-            "status": "verified",
-            "matched_track_count": 2,
-        },
+        "youtube_music": {"playlist": playlist, "tracks": tracks, "track_count": 2},
+        "verification": {"status": "verified", "matched_track_count": 2},
     }
 
 
 class AudioSourceTests(unittest.TestCase):
-    def test_verified_release_produces_playlist_and_individual_queries(self):
+    def test_verified_release_normalizes_exact_track_urls(self):
         plan = validate_audio_release(make_audio_release())
         self.assertEqual(plan["track_count"], 2)
-        self.assertIn("music.youtube.com/playlist", build_playlist_query(plan))
-        queries = build_individual_track_queries(plan)
-        self.assertEqual(len(queries), 2)
-        self.assertEqual(queries[0]["track_number"], 1)
-        self.assertIn("music.youtube.com/watch?v=videoid0001|https://open.spotify.com/track/", queries[0]["query"])
+        self.assertEqual(
+            plan["tracks"][0]["youtube_music_url"],
+            "https://music.youtube.com/watch?v=videoid0001",
+        )
+        self.assertEqual(
+            plan["tracks"][0]["spotify_track_url"],
+            "https://open.spotify.com/track/0000000000000000000001",
+        )
 
-    def test_missing_playlist_keeps_individual_track_fallback(self):
+    def test_missing_playlist_keeps_individual_verified_tracks(self):
         plan = validate_audio_release(make_audio_release(with_playlist=False))
-        self.assertIsNone(build_playlist_query(plan))
-        self.assertEqual(len(build_individual_track_queries(plan)), 2)
+        self.assertIsNone(plan["youtube_music_playlist_url"])
+        self.assertEqual(len(plan["tracks"]), 2)
+        self.assertEqual(plan["tracks"][1]["track_number"], 2)
 
-    def test_generic_youtube_playlist_uses_individual_pairs_with_spotify_album(self):
+    def test_generic_youtube_playlist_is_not_used_as_source(self):
         release = make_audio_release()
         playlist_id = "PL12345678901234567890"
         release["youtube_music"]["playlist"]["playlist_id"] = playlist_id
-        release["youtube_music"]["playlist"]["url"] = f"https://music.youtube.com/playlist?list={playlist_id}"
+        release["youtube_music"]["playlist"]["url"] = (
+            f"https://music.youtube.com/playlist?list={playlist_id}"
+        )
         plan = validate_audio_release(release)
-        self.assertIsNone(build_playlist_query(plan))
-        self.assertEqual(len(build_individual_track_queries(plan)), 2)
+        self.assertIsNone(plan["youtube_music_playlist_url"])
+        self.assertEqual(len(plan["tracks"]), 2)
 
     def test_unverified_release_is_rejected(self):
         release = make_audio_release()
