@@ -537,7 +537,8 @@ def _download_click(
             queue_started = None
 
         if snapshot:
-            progress_reporter.update(snapshot, started)
+            if not queue_busy:
+                progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
             combined_status = " ".join((status, snapshot.get("log", "")))
             if re.search(r"creating ZIP archive", combined_status, re.I):
