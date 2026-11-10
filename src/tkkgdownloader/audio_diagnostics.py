@@ -200,8 +200,8 @@ def _volume_metrics(path: Path, ffmpeg: str, *, silence_seconds: int = 5) -> dic
         "-af", "volumedetect", "-f", "null", "-"
     ])
     import re
-    mean = re.search(r"mean_volume:\\s*(-?[0-9.]+)\\s*dB", volume["stderr"])
-    peak = re.search(r"max_volume:\\s*(-?[0-9.]+)\\s*dB", volume["stderr"])
+    mean = re.search(r"mean_volume:\s*(-?[0-9.]+)\s*dB", volume["stderr"])
+    peak = re.search(r"max_volume:\s*(-?[0-9.]+)\s*dB", volume["stderr"])
     silence = _run([
         ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
         "-af", f"silencedetect=noise=-60dB:d={silence_seconds}", "-f", "null", "-"
