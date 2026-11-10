@@ -933,9 +933,9 @@ def download_and_import(
             logger.exception("Spotisaver run failed")
         if log_path is not None:
             report_stage(f"Download failed: {type(exc).__name__}. Diagnostics: {log_path}", "error")
-        else:
-            report_stage(f"Download failed: {type(exc).__name__}.", "error")
-        raise
+            raise RuntimeError(f"Spotisaver download failed. Diagnostic log: {log_path}") from exc
+        report_stage(f"Download failed: {type(exc).__name__}.", "error")
+        raise RuntimeError(f"Spotisaver download failed ({type(exc).__name__}).") from exc
     finally:
         finish_console_output()
         if logger is not None:
