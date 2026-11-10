@@ -186,6 +186,15 @@ def _write_metadata(mp3: Path, episode: Any, plan: dict[str, Any], tracks: list[
         "title": title, "album": album, "track": "1/1",
         "artwork_count": 1 if selected else 0,
     }
+    frame_readback = {
+        "artist": verified["artist"],
+        "album_artist": verified["album_artist"],
+        "genre": verified["genre"],
+        "date": verified["date"],
+    }
+    for key in frame_readback:
+        if key in values:
+            expected[key] = values[key]["value"]
     for key, value in expected.items():
         if verified[key] != value:
             raise RuntimeError(f"Final MP3 metadata read-back failed for {key}: {verified[key]!r}")
@@ -531,6 +540,7 @@ def run_episode_diagnostics(
         raise RuntimeError(f"320 kbit/s MP3 encoding failed: {encode_result['stderr']}")
     encoded_result = _validate_output(encoded, ffmpeg, ffprobe)
     metadata = _write_metadata(encoded, episode, plan, tracks, artwork)
+    encoded_result = _validate_output(encoded, ffmpeg, ffprobe)
     encoded_result["metadata"] = metadata
     boundaries = _make_boundaries(tracks, durations, ffmpeg, review, sample_rate, channel_count)
 
