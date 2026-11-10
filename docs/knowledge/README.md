@@ -8,6 +8,4 @@ Request-specific planning, open questions, and test notes belong in their number
 
 - [Project overview and principles](project-overview.md)
 - [Technical decisions](technical-decisions.md)
-- [TKKGData integration](tkkgdata-integration.md) — proposed read-only dataset consumer boundary and migration dependency.
-
-Update this index whenever a new Knowledge Base document is added.
+- [TKKGData integration](tkkgdata-integration.md)
