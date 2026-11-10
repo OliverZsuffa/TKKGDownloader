@@ -86,6 +86,7 @@ class FakeLocator:
     def __init__(self, label='', visible=True):
         self.label = label
         self.visible = visible
+        self.enabled = True
         self.first = self
 
     def count(self):
@@ -95,7 +96,7 @@ class FakeLocator:
         return self.visible
 
     def is_enabled(self):
-        return True
+        return self.enabled
 
     def inner_text(self, timeout=None):
         return self.label
@@ -131,6 +132,11 @@ class SpotisaverDownloadControlTests(unittest.TestCase):
         button = FakeLocator('Download entire playlist', visible=False)
         self.assertIsNone(_find_album_download(FakePage(direct=button)))
 
+    def test_rejects_disabled_download_button(self):
+        button = FakeLocator('Download entire playlist')
+        button.enabled = False
+        self.assertIsNone(_find_album_download(FakePage(direct=button)))
+
     def test_polls_until_direct_button_becomes_visible(self):
         class AppearingLocator(FakeLocator):
             def __init__(self):
@@ -152,7 +158,7 @@ class SpotisaverDownloadControlTests(unittest.TestCase):
         page = FakePage(direct=FakeLocator('Download entire playlist', visible=False))
         result = _wait_for_album_download(page, timeout_ms=2, poll_interval_ms=1)
         self.assertIsNone(result)
-        self.assertEqual(page.waited, 2_000)
+        self.assertEqual(page.waited, 2)
 
     def test_finds_scroll_control_only_as_fallback(self):
         button = FakeLocator('Download Playlist')
