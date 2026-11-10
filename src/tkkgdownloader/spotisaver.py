@@ -217,7 +217,7 @@ def _log_visible_download_controls(page: Any) -> None:
     controls = page.locator("button:visible, a:visible").evaluate_all(
         """elements => elements.slice(0, 30).map(element => ({
             tag: element.tagName.toLowerCase(),
-            text: (element.innerText || element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 100),
+            text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
             id: element.id || "",
             title: element.getAttribute("title") || "",
             aria: element.getAttribute("aria-label") || "",
