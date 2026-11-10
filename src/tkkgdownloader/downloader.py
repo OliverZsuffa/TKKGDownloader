@@ -120,7 +120,7 @@ def _download_verified_tracks(yt_dlp: list[str], plan: dict, directory: Path, ep
         if not expected_file.is_file() or expected_file.stat().st_size == 0:
             raise RuntimeError(
                 f"yt-dlp reported success for verified track {number}/{plan['track_count']} "
-                f"but did not produce {expected_file.name}. No combined file was created."
+                f"but did not produce the expected MP3 file {expected_file.name}. No combined file was created."
             )
     return _validate_downloaded_files(directory, plan["track_count"])
 
