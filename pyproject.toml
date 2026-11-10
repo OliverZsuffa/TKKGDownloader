@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Oliver Zsuffa" }]
-dependencies = ["yt-dlp>=2025.10.22"]
+dependencies = ["yt-dlp>=2025.10.22", "playwright>=1.48"]
 
 [project.scripts]
 tkkg = "tkkgdownloader.cli:main"

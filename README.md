@@ -5,77 +5,72 @@ A Windows friendly command line tool that creates one MP3 file per TKKG audio dr
 ## Requirements
 
 - Python 3.11 or newer
-- spotDL 4.5.2 or a compatible version
-- FFmpeg 4.2 or newer, available on PATH
-- Deno is recommended by spotDL for some YouTube downloads
+- FFmpeg available on PATH
+- Chromium for the optional Spotisaver browser provider
 
-Install the project and its pinned spotDL dependency:
+Install the project:
 
     py -m pip install -e .
 
-Check that both external tools are available:
+Install the Playwright browser once:
 
-    spotdl --version
+    py -m playwright install chromium
+
+Check FFmpeg:
+
     ffmpeg -version
-
-## Run from a repository checkout
-
-Open PowerShell in the project folder:
-
-    py -m pip install -e .
-    python tkkg.py 150
-
-You can also use the installed command:
-
-    tkkg 150
 
 ## Usage
 
-Download one episode:
+Download through the existing verified YouTube Music provider:
 
-    python tkkg.py 1
+    py tkkg.py 150
 
-Download an inclusive range:
+Use Spotisaver through a visible Chromium browser for one episode:
 
-    python tkkg.py 1-10
+    py tkkg.py 150 --provider spotisaver
 
-Skip the merge confirmation after verified source selection:
+Download an inclusive range with the default provider:
 
-    python tkkg.py 150 --yes
+    py tkkg.py 1-10
+
+Skip the merge confirmation after all tracks have passed validation:
+
+    py tkkg.py 150 --provider spotisaver --yes
 
 Choose another output folder:
 
-    python tkkg.py 1 --output-dir "D:\\Music\\TKKG"
+    py tkkg.py 1 --output-dir "D:\\Music\\TKKG"
 
 Replace an existing output:
 
-    python tkkg.py 1 --overwrite
+    py tkkg.py 1 --overwrite
 
 Get help:
 
-    python tkkg.py --help
+    py tkkg.py --help
+
+Spotisaver mode accepts exactly one episode per invocation. Run it separately for each episode. It opens a visible browser, checks the album and tracklist against TKKGData, then uses the website's normal ZIP download control or its individual track download controls sequentially. It does not use private endpoints, hidden APIs, stealth browser settings, or access-control workarounds. If the website changes its interface or presents a restriction, the run stops.
 
 ## Data ownership
 
 [TKKGData](https://github.com/OliverZsuffa/TKKGData) is the single source of truth for episode metadata, verified Spotify releases, YouTube Music playlist URLs, individual song URLs, and source verification.
 
-TKKGDownloader fetches the published TKKGData episode array and its dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
-
-The dataset contains a verified Spotify album URL and, where available, a verified YouTube Music playlist URL. It also stores exact Spotify track URLs paired with individual YouTube Music song URLs. The downloader uses the individual verified YouTube Music video URLs directly with yt-dlp. It does not ask spotDL to resolve a playlist, which avoids the provider failure where spotDL attempted to download a YouTube URL with a missing video ID. Spotify track metadata from TKKGData determines canonical names and ordering. The playlist URL remains provenance metadata and is not used for download. The downloader never performs text search or falls back to unverified sources.
-
-If an episode has no complete verified audio mapping, the downloader stops with an actionable error. Audio discovery and correction belong in TKKGData.
+TKKGDownloader fetches the published TKKGData episode array and dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
 
 ## Download and output
 
-The downloader invokes yt-dlp once per exact verified YouTube Music video URL, extracts MP3 audio at 192 kbit/s, validates every expected file and the complete track order against TKKGData, then merges the tracks with FFmpeg.
+The default provider invokes yt-dlp once per exact verified YouTube Music track URL, extracts MP3 audio at 192 kbit/s, validates every expected file, then merges the tracks with FFmpeg.
 
-For example:
+The Spotisaver provider uses Playwright to operate the public album page in visible Chromium. It saves the normal browser download, safely extracts ZIP files, matches every MP3 filename against the canonical track titles from TKKGData, and rejects missing, duplicate, ambiguous, empty, or unexpected tracks. The existing FFmpeg merger runs only after the complete tracklist passes validation.
+
+Example output:
 
     output/TKKG 150 - Heiße Nächte im Dezember.mp3
 
-Existing files are skipped by default. Use --overwrite to replace them. Episode range processing reports failures per episode and continues with the remaining requested episodes.
+Existing files are skipped by default. Use --overwrite to replace them. The default provider retains episode range processing and per-episode error reporting.
 
-The YouTube Music video IDs and Spotify track pairings are supplied by TKKGData. Make sure you have the rights and permissions required for any audio you download.
+Make sure you have the rights and permissions required for any audio you download. Spotisaver permission and usage limits are separate from the downloader's technical checks.
 
 ## Tests
 
@@ -83,8 +78,8 @@ Run the automated tests:
 
     py -m unittest discover -s tests -v
 
-The tests mock network and subprocess calls. They do not download real audio.
+Tests use mocked browser and download behaviour or synthetic ZIP fixtures. They do not download real recordings.
 
 ## Project workflow
 
-See [Requests](requests/README.md), the [Knowledge Base](docs/knowledge/README.md), and [Request 004](requests/004-tkkgdata-consumer/request.md).
+See [Requests](requests/README.md), the [Knowledge Base](docs/knowledge/README.md), and [Request 006](requests/006-spotisaver-import-workflow/request.md).

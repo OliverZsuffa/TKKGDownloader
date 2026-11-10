@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .downloader import download_episode
+from .downloader import download_episode, download_episode_spotisaver
 from .episodes import fetch_catalog, get_episode
 
 
@@ -38,11 +38,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Output directory (default: ./output)")
     parser.add_argument("--overwrite", action="store_true", help="Replace existing output files.")
     parser.add_argument("--yes", action="store_true", help="Skip the merge confirmation after verified source selection.")
+    parser.add_argument(
+        "--provider",
+        choices=("yt-dlp", "spotisaver"),
+        default="yt-dlp",
+        help="Audio provider (default: yt-dlp). Spotisaver processes exactly one episode per run.",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.provider == "spotisaver" and len(args.episodes) != 1:
+        print(
+            "ERROR: Spotisaver mode accepts exactly one episode per run. "
+            "Run it again for each additional episode.",
+            file=sys.stderr,
+        )
+        return 2
     try:
         catalog = fetch_catalog()
     except Exception as exc:
@@ -55,7 +68,8 @@ def main() -> int:
         try:
             episode = get_episode(catalog, number)
             print(f"\n=== TKKG {episode.number:03d}: {episode.title} ===")
-            result = download_episode(
+            downloader = download_episode_spotisaver if args.provider == "spotisaver" else download_episode
+            result = downloader(
                 episode,
                 args.output_dir,
                 overwrite=args.overwrite,

@@ -1,4 +1,4 @@
-"""Download verified TKKGData YouTube tracks and merge them into one MP3."""
+"""Download verified TKKGData sources and merge them into one MP3."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 from .audio_sources import validate_audio_release
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
+from .spotisaver import download_and_import
 
 
 def _command(name: str) -> list[str]:
@@ -59,11 +60,7 @@ def _run_with_progress(
             break
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - started_at
-            print(
-                f"{stage} is still running ({_format_elapsed(elapsed)} elapsed).",
-                flush=True,
-            )
-
+            print(f"{stage} is still running ({_format_elapsed(elapsed)} elapsed).", flush=True)
     elapsed = time.monotonic() - started_at
     print(
         f"{stage} finished with exit code {return_code} "
@@ -82,10 +79,7 @@ def _validate_downloaded_files(directory: Path, expected_count: int) -> list[Pat
         )
     numbers = [int(track.stem.split(" - ", 1)[0]) for track in tracks]
     if numbers != list(range(1, expected_count + 1)):
-        raise RuntimeError(
-            "Downloaded track numbers are incomplete or out of order. "
-            "No combined file was created."
-        )
+        raise RuntimeError("Downloaded track numbers are incomplete or out of order. No combined file was created.")
     album_dirs = {track.parent for track in tracks}
     if len(album_dirs) != 1:
         found = ", ".join(sorted(path.name for path in album_dirs)) or "none"
@@ -95,59 +89,52 @@ def _validate_downloaded_files(directory: Path, expected_count: int) -> list[Pat
         )
     for track in tracks:
         if track.stat().st_size == 0:
-            raise RuntimeError(
-                f"Downloaded track {track.name} is empty. No combined file was created."
-            )
+            raise RuntimeError(f"Downloaded track {track.name} is empty. No combined file was created.")
     return tracks
 
 
-def _download_verified_tracks(
-    yt_dlp: list[str],
-    plan: dict,
-    directory: Path,
-    episode: Episode,
-) -> list[Path]:
+def _download_verified_tracks(yt_dlp: list[str], plan: dict, directory: Path, episode: Episode) -> list[Path]:
     album_dir = directory / _safe_filename(plan["spotify_album_title"])
     album_dir.mkdir(parents=True, exist_ok=True)
-
     for track in plan["tracks"]:
         number = track["track_number"]
         title = _safe_filename(track["spotify_title"])
         output_template = album_dir / f"{number:02d} - {title}.%(ext)s"
         command = [
-            *yt_dlp,
-            "--no-warnings",
-            "--no-playlist",
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "192K",
-            "--windows-filenames",
-            "--output", str(output_template),
+            *yt_dlp, "--no-warnings", "--no-playlist", "--extract-audio",
+            "--audio-format", "mp3", "--audio-quality", "192K",
+            "--windows-filenames", "--output", str(output_template),
             track["youtube_music_url"],
         ]
         result = _run_with_progress(
             command,
-            stage=(
-                f"Downloading verified track {number}/{plan['track_count']} "
-                f"for episode {episode.number}"
-            ),
+            stage=f"Downloading verified track {number}/{plan['track_count']} for episode {episode.number}",
             cwd=directory,
         )
         if result != 0:
             raise RuntimeError(
-                f"yt-dlp failed to download verified track {number}/"
-                f"{plan['track_count']} for episode {episode.number} "
-                f"(exit code {result}). No combined file was created."
+                f"yt-dlp failed to download verified track {number}/{plan['track_count']} "
+                f"for episode {episode.number} (exit code {result}). No combined file was created."
             )
         expected_file = album_dir / f"{number:02d} - {title}.mp3"
         if not expected_file.is_file() or expected_file.stat().st_size == 0:
             raise RuntimeError(
-                f"yt-dlp reported success for verified track {number}/"
-                f"{plan['track_count']} but did not produce the expected MP3 "
-                f"file {expected_file.name}. No combined file was created."
+                f"yt-dlp reported success for verified track {number}/{plan['track_count']} "
+                f"but did not produce the expected MP3 file {expected_file.name}. No combined file was created."
             )
-
     return _validate_downloaded_files(directory, plan["track_count"])
+
+
+def _confirm_merge(assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            "Confirmation is required in non-interactive mode. "
+            "Review the verified source and rerun with --yes to accept it."
+        )
+    answer = input("Merge these verified tracks into one MP3? [y/N] ").strip().lower()
+    return answer in {"y", "yes"}
 
 
 def download_episode(
@@ -158,60 +145,74 @@ def download_episode(
     assume_yes: bool = False,
 ) -> Path | None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    final_path = output_dir / (
-        f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
-    )
+    final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
     if final_path.exists() and not overwrite:
         print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
         return final_path
-
     try:
         plan = validate_audio_release(episode.audio_release)
     except ValueError as exc:
-        raise RuntimeError(
-            f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}"
-        ) from exc
+        raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
 
     yt_dlp = _command("yt-dlp")
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise RuntimeError(
-            "Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH."
-        )
-
+        raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
     print(f"Verified release: {plan['spotify_album_title']}", flush=True)
     print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
-    if plan["youtube_music_playlist_url"]:
-        print(
-            f"Verified YouTube Music playlist (provenance only): "
-            f"{plan['youtube_music_playlist_url']}",
-            flush=True,
-        )
-    print(
-        f"Downloading {plan['track_count']} individually verified YouTube Music tracks "
-        "using their exact video IDs.",
-        flush=True,
-    )
+    print(f"Downloading {plan['track_count']} individually verified YouTube Music tracks.", flush=True)
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
-        work_dir = Path(temp)
-        tracks = _download_verified_tracks(yt_dlp, plan, work_dir, episode)
-
+        tracks = _download_verified_tracks(yt_dlp, plan, Path(temp), episode)
         print("Verified downloaded files:", flush=True)
         for track in tracks:
             print(f"  {track.name}", flush=True)
+        if not _confirm_merge(assume_yes):
+            print("Cancelled. No combined MP3 was created.", flush=True)
+            return None
+        print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
+        merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
+    print(f"Done: {final_path}", flush=True)
+    return final_path
 
-        if not assume_yes:
-            if not sys.stdin.isatty():
-                raise RuntimeError(
-                    "Confirmation is required in non-interactive mode. "
-                    "Review the verified source and rerun with --yes to accept it."
-                )
-            answer = input("Merge this verified release into one MP3? [y/N] ").strip().lower()
-            if answer not in {"y", "yes"}:
-                print("Cancelled. No combined MP3 was created.", flush=True)
-                return None
 
+def download_episode_spotisaver(
+    episode: Episode,
+    output_dir: Path,
+    *,
+    overwrite: bool = False,
+    assume_yes: bool = False,
+) -> Path | None:
+    """Download one episode through Spotisaver's normal browser interface."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
+    if final_path.exists() and not overwrite:
+        print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
+        return final_path
+    try:
+        plan = validate_audio_release(episode.audio_release)
+    except ValueError as exc:
+        raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
+    print(f"Verified release: {plan['spotify_album_title']}", flush=True)
+    print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
+    print(f"Spotisaver album: https://spotisaver.net/en/album/{plan['spotify_album_url'].rsplit('/', 1)[-1]}/", flush=True)
+    print(
+        f"Processing one episode and validating all {plan['track_count']} expected tracks.",
+        flush=True,
+    )
+
+    with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_spotisaver_") as temp:
+        tracks = download_and_import(plan, Path(temp))
+        print("All downloaded files matched the verified TKKGData tracklist:", flush=True)
+        for track in tracks:
+            print(f"  {track.name}", flush=True)
+        if not _confirm_merge(assume_yes):
+            print("Cancelled. No combined MP3 was created.", flush=True)
+            return None
         print(f"Merging {len(tracks)} tracks into one MP3...", flush=True)
         merge_tracks(tracks, final_path, ffmpeg=ffmpeg)
     print(f"Done: {final_path}", flush=True)
