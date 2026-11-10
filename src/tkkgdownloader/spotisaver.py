@@ -131,16 +131,25 @@ def _download_failure(snapshot: dict[str, str]) -> str | None:
     return None
 
 
-def _download_click(page: Any, locator: Any, target: Path) -> Path:
-    """Click once, monitor the rendered queue modal, and wait for the browser event."""
+def _download_click(
+    page: Any,
+    locator: Any,
+    target: Path,
+    *,
+    queue_retry_wait_ms: int = 30_000,
+    retry_locator: Any | None = None,
+) -> Path:
+    """Submit a visible download request and retry only explicit queue rejections."""
     started = time.monotonic()
     download_events: list[Any] = []
     last_snapshot: dict[str, str] | None = None
     last_heartbeat = started
+    queue_started: float | None = None
+    attempt = 1
     _log(f"Preparing browser download; target directory: {target}")
     page.on("download", lambda download: download_events.append(download))
     _log("Registered browser download listener before clicking.")
-    _log("Issuing Playwright click on the selected download control.")
+    _log(f"Issuing Spotisaver download attempt {attempt}.")
     try:
         locator.click()
     except Exception as exc:
@@ -154,10 +163,9 @@ def _download_click(page: Any, locator: Any, target: Path) -> Path:
     )
     while not download_events:
         if page.is_closed():
-            last_status = last_snapshot or {}
             raise RuntimeError(
                 "Spotisaver page closed before a browser download event arrived. "
-                f"Last modal state: {last_status!r}"
+                f"Last modal state: {(last_snapshot or {})!r}"
             )
 
         try:
@@ -170,17 +178,108 @@ def _download_click(page: Any, locator: Any, target: Path) -> Path:
             _log(f"Could not read download modal yet: {type(exc).__name__}: {exc}", started)
             snapshot = {}
 
+        queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+        queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
+        now = time.monotonic()
+
+        if queue_busy:
+            if queue_started is None:
+                queue_started = now
+                stated_delay = _queue_retry_seconds(snapshot)
+                delay_text = f" Website retry instruction: {stated_delay}s." if stated_delay else ""
+                _log(
+                    f"Spotisaver rejected attempt {attempt}: all download slots are busy."
+                    f"{delay_text} Will close the queue modal and retry after "
+                    f"{queue_retry_wait_ms / 1000:.0f}s if the rejection remains active.",
+                    started,
+                )
+            elif now - queue_started >= queue_retry_wait_ms / 1000:
+                # Re-read immediately before acting. The queue may have cleared
+                # between the previous poll and the retry deadline.
+                snapshot = _read_download_modal(page)
+                queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+                queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
+                if queue_busy and not download_events:
+                    _log(
+                        f"Queue rejection is still active after {queue_retry_wait_ms / 1000:.0f}s. "
+                        "Closing the visible modal before retrying.",
+                        started,
+                    )
+                    close_button = page.locator('.modal.show button[aria-label="Close"]')
+                    if not close_button.count() or not close_button.first.is_visible():
+                        raise RuntimeError(
+                            "Spotisaver queue retry is required, but the visible modal Close "
+                            f"button was not found. Last modal state: {snapshot!r}"
+                        )
+                    close_button.first.click()
+                    _log("Clicked the modal Close button. Waiting for the modal to disappear.", started)
+
+                    modal = page.locator(".modal.show")
+                    modal_deadline = time.monotonic() + 10
+                    while modal.count() and modal.first.is_visible():
+                        if page.is_closed():
+                            raise RuntimeError("Spotisaver page closed while closing the queue modal.")
+                        if time.monotonic() >= modal_deadline:
+                            raise RuntimeError(
+                                "Spotisaver queue modal did not close after clicking Close. "
+                                f"Last modal state: {snapshot!r}"
+                            )
+                        page.wait_for_timeout(250)
+
+                    _log("Confirmed that the queue modal is closed.", started)
+                    if retry_locator is None:
+                        retry_button = _find_album_download(page)
+                        button_description = "verified 'Download entire playlist' button"
+                        button_deadline = time.monotonic() + 10
+                        while retry_button is None and time.monotonic() < button_deadline:
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed before the album button could be retried.")
+                            page.wait_for_timeout(500)
+                            retry_button = _find_album_download(page)
+                    else:
+                        retry_button = retry_locator
+                        button_description = "original visible download control"
+                        button_deadline = time.monotonic() + 10
+                        while (
+                            (not retry_button.is_visible() or not retry_button.is_enabled())
+                            and time.monotonic() < button_deadline
+                        ):
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed before the download control could be retried.")
+                            page.wait_for_timeout(500)
+                    if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
+                        _log_selector_state(page, "#downloadAllBtn")
+                        raise RuntimeError(
+                            f"Spotisaver queue modal closed, but the {button_description} "
+                            "did not become available."
+                        )
+
+                    attempt += 1
+                    _log(f"Submitting Spotisaver download attempt {attempt}.", started)
+                    retry_button.click()
+                    _log(
+                        f"Attempt {attempt} click returned. Monitoring for another queue "
+                        "rejection or the browser download event.",
+                        started,
+                    )
+                    queue_started = None
+                    last_snapshot = None
+                    last_heartbeat = time.monotonic()
+                    continue
+            # If the queue notice clears before the retry deadline, the normal
+            # processing path below takes over and no retry is issued.
+        elif queue_started is not None:
+            _log(
+                f"Spotisaver queue notice cleared during attempt {attempt}. "
+                "Continuing to monitor processing without another click.",
+                started,
+            )
+            queue_started = None
+
         if snapshot and snapshot != last_snapshot:
             status = snapshot.get("status", "")
             log_text = snapshot.get("log", "")
-            if _queue_retry_seconds(snapshot) is not None:
-                retry_seconds = _queue_retry_seconds(snapshot)
-                _log(
-                    "Spotisaver queue is busy. The page asks to try again in "
-                    f"{retry_seconds}s. Monitoring the page; no second click will be issued.",
-                    started,
-                )
-            elif status or log_text:
+            if not queue_busy and (status or log_text):
                 _log(
                     f"Spotisaver modal status: {status[:240]!r}; "
                     f"message: {log_text[:360]!r}",
@@ -208,7 +307,7 @@ def _download_click(page: Any, locator: Any, target: Path) -> Path:
             last_heartbeat = now
         page.wait_for_timeout(1_000)
 
-    _log("Browser download event received.", started)
+    _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
     suggested = Path(download.suggested_filename).name
     destination = target / suggested
@@ -227,7 +326,6 @@ def _download_click(page: Any, locator: Any, target: Path) -> Path:
         raise RuntimeError(f"Spotisaver produced an empty download: {suggested}")
     _log(f"Download validated successfully: {destination}", started)
     return destination
-
 
 def _find_album_download(page: Any) -> Any | None:
     """Find Spotisaver's actual full-playlist button, never the scroll control."""
@@ -454,7 +552,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                         )
                     _log(f"Found visible Download control for track {number}: {title!r}.", workflow_started)
                     stage = f"track {number} download"
-                    files.append(_download_click(page, button, destination))
+                    files.append(_download_click(page, button, destination, retry_locator=button))
                     _log(f"Track {number}/{len(plan['tracks'])} saved: {files[-1].name}", workflow_started)
                 _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files

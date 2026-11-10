@@ -5,6 +5,7 @@ import io
 import tempfile
 import time
 import warnings
+from unittest.mock import patch
 import unittest
 import zipfile
 from pathlib import Path
@@ -343,9 +344,10 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertEqual(locator.clicked, 1)
             self.assertEqual(page.waited, 3)
             self.assertEqual(result.name, "album.zip")
-            self.assertIn("queue is busy", output.getvalue())
-            self.assertIn("try again in 25s", output.getvalue())
-            self.assertIn("no second click will be issued", output.getvalue())
+            self.assertIn("rejected attempt 1", output.getvalue())
+            self.assertIn("Website retry instruction: 25s", output.getvalue())
+            self.assertIn("queue notice cleared", output.getvalue())
+            self.assertNotIn("Closing the visible modal", output.getvalue())
 
     def test_queue_retry_delay_parser(self):
         snapshot = {
@@ -415,6 +417,179 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             _download_click(InterruptPage(), locator, Path("."))
         self.assertEqual(locator.clicked, 1)
+
+
+    def test_queue_rejection_closes_modal_waits_and_reclicks_once(self):
+        class Clock:
+            now = 0.0
+
+            def monotonic(self):
+                return self.now
+
+        clock = Clock()
+
+        class FakeDownload:
+            suggested_filename = "album.zip"
+
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class ModalLocator:
+            def __init__(self, page):
+                self.page = page
+                self.first = self
+
+            def count(self):
+                return 1
+
+            def is_visible(self):
+                return self.page.modal_open
+
+        class CloseButton:
+            def __init__(self, page):
+                self.page = page
+                self.first = self
+
+            def count(self):
+                return 1 if self.page.modal_open else 0
+
+            def is_visible(self):
+                return self.page.modal_open
+
+            def click(self):
+                self.page.close_clicks += 1
+                self.page.modal_open = False
+
+        class AlbumButton:
+            def __init__(self, page):
+                self.page = page
+                self.first = self
+
+            def count(self):
+                return 1
+
+            def is_visible(self):
+                return not self.page.modal_open
+
+            def is_enabled(self):
+                return True
+
+            def inner_text(self, timeout=None):
+                return "Download entire playlist"
+
+            def click(self):
+                self.page.album_clicks += 1
+                if self.page.album_clicks == 2:
+                    self.page.modal_open = True
+
+        class RetryPage:
+            def __init__(self):
+                self.events = {}
+                self.modal_open = True
+                self.album_clicks = 0
+                self.close_clicks = 0
+
+            def on(self, event, callback):
+                self.events[event] = callback
+
+            def locator(self, selector):
+                if selector == '.modal.show button[aria-label="Close"]':
+                    return CloseButton(self)
+                if selector == ".modal.show":
+                    return ModalLocator(self)
+                if selector == "#downloadAllBtn":
+                    return AlbumButton(self)
+                raise AssertionError(f"Unexpected selector: {selector}")
+
+            def evaluate(self, script):
+                if self.album_clicks == 1:
+                    return {
+                        "status": "Downloading playlist...",
+                        "log": "Sorry, all download slots are busy right now. Please try again in 25 sec.",
+                        "failed": "",
+                        "progress": "0 100%",
+                        "controls": '[{"aria":"Close"}]',
+                    }
+                return {
+                    "status": "Downloading playlist...",
+                    "log": "",
+                    "failed": "",
+                    "progress": "100 100%",
+                    "controls": "[]",
+                }
+
+            def is_closed(self):
+                return False
+
+            def wait_for_timeout(self, timeout):
+                clock.now += timeout / 1000
+                if self.album_clicks >= 2 and clock.now >= 31:
+                    self.events["download"](FakeDownload())
+
+        page = RetryPage()
+        first_button = AlbumButton(page)
+        with tempfile.TemporaryDirectory() as temp:
+            output = io.StringIO()
+            with patch("tkkgdownloader.spotisaver.time.monotonic", clock.monotonic):
+                with contextlib.redirect_stdout(output):
+                    result = _download_click(
+                        page,
+                        first_button,
+                        Path(temp),
+                        queue_retry_wait_ms=30_000,
+                    )
+        self.assertEqual(page.album_clicks, 2)
+        self.assertEqual(page.close_clicks, 1)
+        self.assertEqual(result.name, "album.zip")
+        self.assertIn("Confirmed that the queue modal is closed", output.getvalue())
+        self.assertIn("Submitting Spotisaver download attempt 2", output.getvalue())
+        self.assertIn("Browser download event received during attempt 2", output.getvalue())
+
+    def test_generic_stall_does_not_trigger_retry(self):
+        class FakeDownload:
+            suggested_filename = "album.zip"
+
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class Page:
+            def __init__(self):
+                self.events = {}
+                self.waits = 0
+                self.clicked = 0
+
+            def on(self, event, callback):
+                self.events[event] = callback
+
+            def evaluate(self, script):
+                return {
+                    "status": "Downloading playlist...",
+                    "log": "",
+                    "failed": "",
+                    "progress": "0 100%",
+                    "controls": "[]",
+                }
+
+            def is_closed(self):
+                return False
+
+            def wait_for_timeout(self, timeout):
+                self.waits += 1
+                if self.waits == 2:
+                    self.events["download"](FakeDownload())
+
+        class Button:
+            def __init__(self, page):
+                self.page = page
+
+            def click(self):
+                self.page.clicked += 1
+
+        page = Page()
+        with tempfile.TemporaryDirectory() as temp:
+            result = _download_click(page, Button(page), Path(temp), queue_retry_wait_ms=0)
+        self.assertEqual(page.clicked, 1)
+        self.assertEqual(result.name, "album.zip")
 
 
 if __name__ == "__main__":
