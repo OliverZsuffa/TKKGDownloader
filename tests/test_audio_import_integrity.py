@@ -5,6 +5,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from mutagen.id3 import ID3, TIT2, TRCK
+
 from tkkgdownloader.audio_import import (
     import_audio_files,
     serializable_manifest,
@@ -70,7 +72,7 @@ class TrackIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             archive = make_archive(root, [("Teil 1.mp3", b"one"), ("Teil-1.mp3", b"two")])
-            with self.assertRaisesRegex(RuntimeError, "colliding normalized titles"):
+            with self.assertRaisesRegex(RuntimeError, "colliding normalised titles"):
                 import_audio_files(
                     [archive], expected("Teil 1", "Teil-1"), root / "work"
                 )
@@ -126,6 +128,26 @@ class TrackIdentityTests(unittest.TestCase):
             portable = serializable_manifest(manifest)
             self.assertNotIn("_workspace_root", portable)
             self.assertEqual(validate_track_manifest(result, manifest), result)
+
+    def test_embedded_metadata_disagreement_is_a_warning_not_reassignment(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tagged = root / "tagged.mp3"
+            tagged.write_bytes(b"audio")
+            tags = ID3()
+            tags.add(TIT2(encoding=3, text="Wrong embedded title"))
+            tags.add(TRCK(encoding=3, text="7/12"))
+            tags.save(tagged)
+            archive = make_archive(root, [("Wrong embedded title.mp3", tagged.read_bytes())])
+            manifest: dict = {}
+            import_audio_files(
+                [archive], expected("Wrong embedded title"), root / "work",
+                manifest_out=manifest,
+            )
+            self.assertEqual(manifest["tracks"][0]["embedded_metadata"]["track_number"], "7/12")
+            self.assertTrue(any("differs from canonical number" in item
+                                for item in manifest["tracks"][0]["warnings"]))
+            self.assertEqual(manifest["status"], "warnings")
 
     def test_manifest_rejects_modified_file_before_merge(self):
         with tempfile.TemporaryDirectory() as temp:
