@@ -25,11 +25,7 @@ jobs:
         run: |
           python - <<'PY'
           from tkkgdownloader.episodes import fetch_catalog
-          from tkkgdownloader.audio_sources import (
-              build_individual_track_queries,
-              build_playlist_query,
-              validate_audio_release,
-          )
+          from tkkgdownloader.audio_sources import validate_audio_release
 
           catalog = fetch_catalog()
           assert 150 in catalog, "Episode 150 is missing from TKKGData"
@@ -40,10 +36,13 @@ jobs:
               "https://music.youtube.com/playlist?list="
               "OLAK5uy_mQRbJNANh1H4CKbmM5ez5LSW1HJFvE3QI"
           ), "Episode 150's verified YouTube Music playlist changed"
-          assert build_playlist_query(plan).endswith(
-              "|https://open.spotify.com/album/0ZqyFeMXxCyIJvYptGlnn1"
+          assert len(plan["tracks"]) == 40
+          assert plan["tracks"][0]["youtube_music_url"].startswith(
+              "https://music.youtube.com/watch?v="
           )
-          assert len(build_individual_track_queries(plan)) == 40
+          assert plan["tracks"][0]["spotify_track_url"].startswith(
+              "https://open.spotify.com/track/"
+          )
           print(
               f"Fetched {len(catalog)} TKKGData episodes. "
               f"Episode 150 has {plan['track_count']} verified Spotify and YouTube Music pairs."
