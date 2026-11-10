@@ -194,6 +194,30 @@ def _write_metadata(mp3: Path, episode: Any, plan: dict[str, Any], tracks: list[
     return {"fields": values, "readback": verified, "verified": True}
 
 
+def _volume_metrics(path: Path, ffmpeg: str, *, silence_seconds: int = 5) -> dict[str, Any]:
+    volume = _run([
+        ffmpeg, "-hide_banner", "-i", str(path),
+        "-af", "volumedetect", "-f", "null", "-"
+    ])
+    import re
+    mean = re.search(r"mean_volume:\\s*(-?[0-9.]+)\\s*dB", volume["stderr"])
+    peak = re.search(r"max_volume:\\s*(-?[0-9.]+)\\s*dB", volume["stderr"])
+    silence = _run([
+        ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
+        "-af", f"silencedetect=noise=-60dB:d={silence_seconds}", "-f", "null", "-"
+    ])
+    return {
+        "mean_volume_db": float(mean.group(1)) if mean else None,
+        "max_volume_db": float(peak.group(1)) if peak else None,
+        "volume_command": volume["command"],
+        "volume_returncode": volume["returncode"],
+        "volume_stderr": volume["stderr"],
+        "silence_command": silence["command"],
+        "silence_returncode": silence["returncode"],
+        "silence_stderr": silence["stderr"],
+    }
+
+
 def _audio_stream(probe: dict[str, Any]) -> dict[str, Any]:
     return next((stream for stream in probe.get("streams", []) if stream.get("codec_type") == "audio"), {})
 
@@ -213,10 +237,7 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
         decode = _decode(path, ffmpeg)
         duration = _duration(probe)
         durations.append(duration)
-        silence = _run([
-            ffmpeg, "-hide_banner", "-nostats", "-i", str(path),
-            "-af", "silencedetect=noise=-60dB:d=5", "-f", "null", "-"
-        ])
+        levels = _volume_metrics(path, ffmpeg)
         record = {
             "track_number": index,
             "title": path.stem.split(" - ", 1)[-1],
@@ -232,9 +253,7 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             "decode_command": decode["command"],
             "decode_returncode": decode["returncode"],
             "decode_stderr": decode["stderr"],
-            "silence_command": silence["command"],
-            "silence_returncode": silence["returncode"],
-            "silence_diagnostic": silence["stderr"],
+            "level_and_silence_metrics": levels,
             "probe": probe,
         }
         records.append(record)
@@ -249,7 +268,7 @@ def _inspect_sources(tracks: list[Path], ffmpeg: str, ffprobe: str, reports: Pat
             flags.append("duration_outlier")
         if record["size_bytes"] < 16_384:
             flags.append("unusually_small_file")
-        if "silence_start" in record["silence_diagnostic"]:
+        if "silence_start" in record["level_and_silence_metrics"]["silence_stderr"]:
             flags.append("long_silence_detected_review_required")
         record["flags"] = flags
     reports.mkdir(parents=True, exist_ok=True)
@@ -315,6 +334,8 @@ def _make_boundaries(
             ])
             if result["returncode"] != 0 or not output.is_file():
                 raise RuntimeError(f"Could not create boundary excerpt for {source.name}: {result['stderr']}")
+        before_metrics = _volume_metrics(before, ffmpeg, silence_seconds=1)
+        after_metrics = _volume_metrics(after, ffmpeg, silence_seconds=1)
         clips.extend((before, after))
         boundaries.append({
             "boundary": index + 1,
@@ -323,6 +344,8 @@ def _make_boundaries(
             "expected_timestamp_seconds": round(timestamp, 6),
             "before_excerpt": str(before),
             "after_excerpt": str(after),
+            "before_level_and_silence": before_metrics,
+            "after_level_and_silence": after_metrics,
         })
         elapsed = timestamp
     concat = review / "boundary-concat.txt"
@@ -379,8 +402,10 @@ def run_episode_diagnostics(
     if stream_copy.exists():
         raise FileExistsError(stream_copy)
     from .merger import merge_tracks
-    merge_tracks(tracks, stream_copy, ffmpeg=ffmpeg)
+    stream_merge_details: dict[str, Any] = {}
+    merge_tracks(tracks, stream_copy, ffmpeg=ffmpeg, diagnostics=stream_merge_details)
     stream_result = _validate_output(stream_copy, ffmpeg, ffprobe)
+    stream_result["merge_details"] = stream_merge_details
 
     rates: dict[int, int] = {}
     channels: dict[int, int] = {}
@@ -404,6 +429,7 @@ def run_episode_diagnostics(
 
     segments_dir = pcm_dir / "segments"
     segments_dir.mkdir(exist_ok=True)
+    pcm_conversion_commands: list[list[str]] = []
     wavs: list[Path] = []
     for index, path in enumerate(tracks, start=1):
         wav = segments_dir / f"{index:02d}.wav"
@@ -414,6 +440,7 @@ def run_episode_diagnostics(
         ])
         if result["returncode"] != 0:
             raise RuntimeError(f"PCM conversion failed for {path.name}: {result['stderr']}")
+        pcm_conversion_commands.append(result["command"])
         wavs.append(wav)
     pcm_list = pcm_dir / "segments.txt"
     _concat_file(wavs, pcm_list)
@@ -452,6 +479,7 @@ def run_episode_diagnostics(
         "track_count": len(tracks),
         "tool_versions": versions,
         "pcm_parameters": {"sample_rate": sample_rate, "channels": channel_count, "sample_format": "pcm_s24le"},
+        "pcm_conversion_commands": pcm_conversion_commands,
         "source_duration_sum_seconds": expected_duration,
         "stream_copy": stream_result,
         "pcm_master": master_result,
