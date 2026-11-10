@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Implementation requires Oliver's approval.
+Approved and implemented in PR #21. All automated CI checks passed. Merge is pending.
 
 ## Objective
 
@@ -69,18 +69,18 @@ The manifest must preserve the exact mapping used by the merger. In R13 diagnost
 
 ## Acceptance criteria
 
-- [ ] Substring collisions such as Teil 1 versus Teil 10 cannot produce a match.
-- [ ] Exact normalised title matches succeed across documented harmless punctuation, case, and Unicode differences.
-- [ ] Ambiguous, missing, duplicate, unexpected, and empty source files are rejected before merging.
-- [ ] Canonical track numbers must be unique and contiguous from one.
-- [ ] Every successful import produces a complete in-memory manifest.
-- [ ] R13 diagnostic mode persists the manifest as JSON and includes it in the human-readable and machine-readable reports.
-- [ ] The manifest records original and canonical paths, expected metadata, embedded metadata when available, matching rule, file size, and SHA-256.
-- [ ] The copied canonical files are checksum-verified against the extracted originals.
-- [ ] Repeated checksums and embedded metadata disagreements are reported with the defined severity.
-- [ ] The merger consumes the exact manifest order and verifies that its input files still match the manifest.
-- [ ] A rejected import cannot create or overwrite a merged episode.
-- [ ] Automated tests cover matching collisions, normalisation, ambiguity, missing and extra files, duplicate checksums, metadata disagreements, canonical numbering, manifest generation, tampering between import and merge, and failure before merge.
-- [ ] Existing R13 tests continue to pass.
-- [ ] Existing normal YouTube Music behaviour remains unchanged.
-- [ ] No real downloads or external website access are required by automated tests.
+- [x] Substring collisions such as Teil 1 versus Teil 10 cannot produce a match.
+- [x] Exact normalised title matches succeed across documented harmless punctuation, case, and Unicode differences.
+- [x] Ambiguous, missing, duplicate, unexpected, and empty source files are rejected before merging.
+- [x] Canonical track numbers must be unique and contiguous from one.
+- [x] Every successful import produces a complete in-memory manifest.
+- [x] R13 diagnostic mode persists the manifest as JSON and includes it in the human-readable and machine-readable reports.
+- [x] The manifest records original and canonical paths, expected metadata, embedded metadata when available, matching rule, file size, and SHA-256.
+- [x] The copied canonical files are checksum-verified against the extracted originals.
+- [x] Repeated checksums and embedded metadata disagreements are reported with the defined severity.
+- [x] The merger consumes the exact manifest order and verifies that its input files still match the manifest.
+- [x] A rejected import cannot create or overwrite a merged episode.
+- [x] Automated tests cover matching collisions, normalisation, ambiguity, missing and extra files, duplicate checksums, metadata disagreements, canonical numbering, manifest generation, tampering between import and merge, and failure before merge.
+- [x] Existing R13 tests continue to pass.
+- [x] Existing normal YouTube Music behaviour remains unchanged.
+- [x] No real downloads or external website access are required by automated tests.
