@@ -1,82 +1,91 @@
 # Implementation plan: Request 006
 
-## Phase 1: Confirm source constraints
+## Phase 1: Confirm scope and inspect the current codebase
 
-1. Treat the public Spotisaver pages as documentation for a manual user workflow only.
-2. Recheck the Terms of Service immediately before implementation because website rules can change.
-3. Do not automate the site's interface, call undocumented endpoints, evade limits, or download audio from the service programmatically.
-4. If Spotisaver provides written permission or a documented API for the intended one-album use, record that evidence and prepare a separate plan amendment before implementing any integration beyond browser handoff.
-5. Do not assume that a streaming subscription grants permission to make permanent MP3 copies. Keep source acquisition outside the downloader until rights and site terms are clear.
+1. Inspect the current CLI, TKKGData integration, track model, temporary-directory handling, FFmpeg merge path, dependencies, tests, and Knowledge Base conventions.
+2. Record that Oliver reports explicit Spotisaver approval for the intended occasional, personal, one-episode-at-a-time browser automation workflow.
+3. Keep the implementation within that reported permission and any narrower limits displayed by Spotisaver. Do not infer permission for catalogue-wide or unattended downloads.
+4. Recheck the public Spotisaver workflow and current terms before implementation. If the site presents a restriction that conflicts with the reported approval, stop and ask for clarification rather than bypassing it.
 
-## Phase 2: Browser handoff
+## Phase 2: Playwright browser provider
 
-1. Add a helper that builds the public Spotisaver album page URL from the Spotify album ID in the validated TKKGData release.
-2. Offer an explicit command or prompt to open the page in the system browser.
-3. Do not scrape the rendered page, inspect private API calls, automate clicks, or attempt to obtain audio URLs.
-4. Keep this feature optional. The user can cancel and continue with another permitted source.
+1. Add Playwright for Python as a project dependency and document the one-time Chromium installation command.
+2. Implement an isolated Spotisaver provider module. Do not mix browser logic into the canonical TKKGData parsing or FFmpeg merge code.
+3. Build the album URL from the validated Spotify album ID in TKKGData.
+4. Launch visible Chromium by default. Do not use stealth plugins, anti-detection modifications, or hidden browser contexts.
+5. Navigate to the public album page and wait for the rendered album content to become ready.
+6. Verify the displayed album identity and tracklist against the expected TKKGData release before initiating downloads. If the page cannot be reliably identified, stop.
+7. Use stable, user-visible selectors where possible. Keep selectors in one provider module and provide clear diagnostics when the website changes.
+8. Use Playwright's normal download event handling, such as `page.expect_download()`, to save files into a per-run temporary directory.
+9. Prefer the website's advertised ZIP download when it is present and covered by the reported approval.
+10. If ZIP is unavailable, download individual tracks sequentially only if that method is covered by the reported approval. Do not run concurrent downloads.
+11. Keep the browser visible so Oliver can complete ordinary user interactions. Do not save credentials or session tokens.
+12. If a CAPTCHA, login requirement, access denial, rate limit, cooldown, or other protection appears, pause or stop and report it. Never attempt to bypass it.
+13. Add bounded timeouts and useful errors for navigation, album mismatch, incomplete tracklist, missing download controls, interrupted download, and browser closure.
+14. Close the browser cleanly after success. On a recoverable manual interaction, allow the user to complete it before continuing or cancel.
 
-## Phase 3: Local audio import
+## Phase 3: CLI integration
 
-1. Add a user supplied import path for MP3 files or a ZIP archive.
-2. Validate the path and supported file types before processing.
-3. Inspect ZIP members before extraction. Reject absolute paths, parent traversal, symlinks, nested archives unless explicitly supported, and unexpected file types.
-4. Extract only into a newly created temporary directory.
-5. Never modify or delete the user's source archive or original MP3 files.
-6. Support common filename patterns and ID3 tags. Prefer exact Spotify track title and track number metadata from TKKGData.
-7. Normalize punctuation, whitespace, and common filename decorations for matching, but do not use fuzzy matching to silently select between candidates.
-8. Use duration as a secondary consistency check with a documented tolerance. Report rather than silently accept significant mismatches.
-9. Require exactly one match for each expected track. Reject missing tracks, duplicate candidates, unexpected extras where they create ambiguity, and empty files.
-10. Preserve dynamic track counts. Do not hardcode 40.
+1. Add an explicit Spotisaver provider selection to the existing CLI, preferably `py tkkg.py 150 --provider spotisaver`, unless inspection shows a cleaner established pattern.
+2. Preserve the current default behaviour unless the user explicitly selects Spotisaver or approves a later default-provider change.
+3. Keep the command scoped to the requested episode or explicit episode range. Spotisaver automation must reject a range containing more than one episode in this initial implementation.
+4. Print the episode, album ID, Spotisaver URL, expected track count, and a clear notice that one album is being processed.
+5. Do not automatically retry a failed website download in a way that could exceed site limits.
 
-## Phase 4: Reuse the existing merge pipeline
+## Phase 4: Import, validate, and merge
 
-1. Convert validated imported files into the same internal ordered track representation used by the current downloader.
-2. Reuse the existing FFmpeg merge implementation.
-3. Preserve output naming, overwrite protection, confirmation prompts, range behaviour, and per episode failure handling.
-4. Never create a combined MP3 unless every expected track has passed validation.
-5. Clean up only temporary working files.
+1. Pass the downloaded ZIP or individual MP3 paths to an isolated import and validation layer.
+2. Safely inspect ZIP members before extraction. Reject absolute paths, parent traversal, symlinks, nested archives unless explicitly supported, corrupt archives, unsupported file types, and empty files.
+3. Match tracks using track number and title metadata or filenames, normalized against TKKGData. Use duration as a secondary validation signal.
+4. Require exactly one valid file for each expected track. Never hardcode 40 or any other album track count.
+5. Report missing, duplicate, ambiguous, unexpected, corrupt, and mismatched files with track-specific diagnostics.
+6. Do not merge unless the complete expected track set passes validation.
+7. Reuse the existing FFmpeg merge implementation and preserve output naming, overwrite protection, confirmation behaviour, and per-episode failure handling.
+8. Keep source downloads unchanged. Use temporary working copies and clean up temporary data after success or failure.
 
 ## Phase 5: Tests
 
-Add tests for:
-- Building the Spotisaver URL from a verified Spotify album ID.
-- Browser handoff being optional and user initiated.
-- Importing an archive with correctly tagged MP3 files.
-- Importing files with filename based track numbers.
-- Dynamic track counts.
-- ZIP path traversal and absolute path rejection.
-- Corrupt ZIP archives and unsupported files.
-- Empty files and missing tracks.
-- Duplicate or ambiguous matches.
-- Title and duration mismatches.
-- No merge when validation fails.
-- Successful merge in the exact TKKGData order.
-- Source files remaining unchanged.
-- Temporary directory cleanup.
-- Existing CLI and overwrite behaviour remaining intact.
+Use mocked Playwright pages and synthetic audio fixtures. CI must not download copyrighted recordings or depend on Spotisaver availability.
 
-All automated tests must use synthetic audio fixtures or mocked media metadata. CI must not fetch or redistribute copyrighted recordings.
+Add tests for:
+- Album URL construction from TKKGData.
+- Visible browser launch configuration.
+- Album identity and tracklist verification.
+- ZIP download event handling.
+- Sequential individual download event handling where enabled.
+- Stop behaviour for CAPTCHA, login, access denial, cooldown, and rate-limit states.
+- Timeouts, changed selectors, interrupted downloads, and browser closure.
+- ZIP traversal, absolute paths, symlinks, corrupt archives, unsupported files, and empty files.
+- Metadata and filename matching.
+- Dynamic track counts and exact ordering.
+- Missing, duplicate, ambiguous, unexpected, and mismatched tracks.
+- Duration mismatch reporting.
+- No merge when validation fails.
+- Successful merge in canonical TKKGData order.
+- Source file preservation and temporary-directory cleanup.
+- Existing CLI behaviour and overwrite protection.
 
 ## Phase 6: Documentation and manual verification
 
-1. Update README usage examples for local import.
-2. Update the Knowledge Base with the source separation and import design.
-3. Record the current Spotisaver terms and the no-automation boundary in request notes.
-4. After implementation and merge, Oliver should test the import workflow with audio files he is entitled to copy.
-5. Verify the resulting MP3 plays and contains every expected track in order.
+1. Update README with Playwright installation, browser behaviour, CLI usage, and troubleshooting.
+2. Update the Knowledge Base with the provider architecture and one-episode scope.
+3. Record that Spotisaver permission was reported by Oliver and that the implementation must respect the precise approved scope and live site limits.
+4. Run the full test suite and CI contract smoke test against live TKKGData metadata, without downloading audio.
+5. Ask Oliver to run the first real episode 150 test locally.
+6. Verify the downloaded files, merged MP3 playback, track order, and total duration.
+7. Do not claim the real download works until Oliver confirms the manual Windows test.
 
-## Expected files
+## Expected implementation structure
 
-Likely changes:
-- `src/tkkgdownloader/cli.py` or the current CLI entry point
-- `src/tkkgdownloader/audio_import.py` as a new isolated import module
-- `src/tkkgdownloader/downloader.py` for integration with the existing merge pipeline
-- `tests/`
-- `README.md`
-- `docs/knowledge/`
+Exact paths must be confirmed against the repository before implementation. Proposed separation:
 
-Exact paths must be confirmed against the current repository before implementation.
+- `src/tkkgdownloader/spotisaver.py`: Playwright provider, album page verification, browser download events.
+- `src/tkkgdownloader/audio_import.py`: safe ZIP and MP3 import, matching, validation.
+- `src/tkkgdownloader/cli.py` or current CLI entry point: provider selection and one-episode guard.
+- Existing downloader and FFmpeg modules: reuse the established merge pipeline.
+- `tests/`: mocked browser and synthetic media tests.
+- `README.md` and `docs/knowledge/`: setup and workflow documentation.
 
 ## Approval gate
 
-This is a plan only. Do not modify production code until Oliver explicitly approves it. Any future proposal to automate Spotisaver downloads requires separate confirmation of the site's permission and a new approved plan amendment.
+This is a plan only. Do not modify production code until Oliver explicitly approves this revised plan. The approval reported from Spotisaver is treated as applying only to the occasional, personal, one-episode-at-a-time workflow described in Request 006. Any broader automation requires separate confirmation and a plan revision.
