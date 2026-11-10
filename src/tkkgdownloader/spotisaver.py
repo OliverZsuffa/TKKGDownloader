@@ -62,37 +62,154 @@ def _log_selector_state(page: Any, selector: str) -> int:
     return count
 
 
-def _download_click(page: Any, locator: Any, target: Path, timeout_ms: int) -> Path:
-    """Click a visible control and report each stage of the browser download."""
+def _read_download_modal(page: Any) -> dict[str, str]:
+    """Read visible status text from Spotisaver's rendered download modal."""
+    return page.evaluate(
+        """() => {
+            const read = (selector) => {
+                const element = document.querySelector(selector);
+                if (!element) return "";
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") return "";
+                return (element.innerText || element.textContent || "").trim();
+            };
+            const progress = document.querySelector("#downloadProgress");
+            const progressText = progress
+                ? [progress.getAttribute("aria-valuenow"), progress.style.width]
+                    .filter(Boolean).join(" ")
+                : "";
+            const retryControls = Array.from(
+                document.querySelectorAll(".modal.show button, .modal.show a")
+            ).filter((element) => {
+                const style = window.getComputedStyle(element);
+                return style.display !== "none" && style.visibility !== "hidden";
+            }).map((element) => ({
+                text: (element.innerText || element.textContent || "").trim(),
+                id: element.id || "",
+                aria: element.getAttribute("aria-label") || ""
+            }));
+            return {
+                status: read("#downloadStatusText"),
+                log: read("#downloadMiniLog"),
+                failed: read("#downloadFailedBadge"),
+                progress: progressText,
+                controls: JSON.stringify(retryControls)
+            };
+        }"""
+    )
+
+
+def _queue_retry_seconds(snapshot: dict[str, str]) -> int | None:
+    """Extract a retry delay stated in the visible queue notice."""
+    text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+    if not re.search(r"all download slots are busy|slots are busy", text, re.I):
+        return None
+    match = re.search(
+        r"try again in\s+(\d+)\s*(sec(?:ond)?s?|min(?:ute)?s?)",
+        text,
+        re.I,
+    )
+    if not match:
+        return None
+    amount = int(match.group(1))
+    return amount * 60 if match.group(2).lower().startswith("min") else amount
+
+
+def _download_failure(snapshot: dict[str, str]) -> str | None:
+    """Return an explicit failure reported by the modal, excluding queue notices."""
+    failed_badge = snapshot.get("failed", "").strip()
+    if failed_badge:
+        return failed_badge
+    text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+    if re.search(
+        r"download failed|failed to download|error downloading|"
+        r"something went wrong|unable to download|could not download",
+        text,
+        re.I,
+    ):
+        return text[:500]
+    return None
+
+
+def _download_click(page: Any, locator: Any, target: Path) -> Path:
+    """Click once, monitor the rendered queue modal, and wait for the browser event."""
     started = time.monotonic()
-    click_completed = False
+    download_events: list[Any] = []
+    last_snapshot: dict[str, str] | None = None
+    last_heartbeat = started
     _log(f"Preparing browser download; target directory: {target}")
+    page.on("download", lambda download: download_events.append(download))
+    _log("Registered browser download listener before clicking.")
+    _log("Issuing Playwright click on the selected download control.")
     try:
-        with page.expect_download(timeout=timeout_ms) as download_info:
-            _log("Issuing Playwright click on the selected download control.")
-            try:
-                locator.click()
-            except Exception as exc:
-                _log(f"CLICK FAILED: {type(exc).__name__}: {exc}", started)
-                raise
-            click_completed = True
-            _log("Click call returned successfully; waiting for browser download event.", started)
+        locator.click()
     except Exception as exc:
-        if click_completed:
-            _log(
-                f"DOWNLOAD EVENT FAILED after click: {type(exc).__name__}: {exc}",
-                started,
-            )
-        else:
-            _log(
-                f"DOWNLOAD CONTROL CLICK FAILED before click completion: "
-                f"{type(exc).__name__}: {exc}",
-                started,
-            )
+        _log(f"CLICK FAILED: {type(exc).__name__}: {exc}", started)
         raise
 
+    _log(
+        "Click call returned successfully. Monitoring Spotisaver's queue and waiting "
+        "without a fixed download-event timeout.",
+        started,
+    )
+    while not download_events:
+        if page.is_closed():
+            last_status = last_snapshot or {}
+            raise RuntimeError(
+                "Spotisaver page closed before a browser download event arrived. "
+                f"Last modal state: {last_status!r}"
+            )
+
+        try:
+            snapshot = _read_download_modal(page)
+        except Exception as exc:
+            if page.is_closed():
+                raise RuntimeError(
+                    "Spotisaver page closed while waiting for the download event."
+                ) from exc
+            _log(f"Could not read download modal yet: {type(exc).__name__}: {exc}", started)
+            snapshot = {}
+
+        if snapshot and snapshot != last_snapshot:
+            status = snapshot.get("status", "")
+            log_text = snapshot.get("log", "")
+            if _queue_retry_seconds(snapshot) is not None:
+                retry_seconds = _queue_retry_seconds(snapshot)
+                _log(
+                    "Spotisaver queue is busy. The page asks to try again in "
+                    f"{retry_seconds}s. Monitoring the page; no second click will be issued.",
+                    started,
+                )
+            elif status or log_text:
+                _log(
+                    f"Spotisaver modal status: {status[:240]!r}; "
+                    f"message: {log_text[:360]!r}",
+                    started,
+                )
+            if snapshot.get("progress"):
+                _log(f"Spotisaver progress indicator: {snapshot['progress']!r}", started)
+            if snapshot.get("controls"):
+                _log(f"Visible modal controls: {snapshot['controls'][:500]}", started)
+            last_snapshot = snapshot
+
+        failure = _download_failure(snapshot)
+        if failure:
+            raise RuntimeError(f"Spotisaver reported a download failure: {failure}")
+
+        now = time.monotonic()
+        if now - last_heartbeat >= 15:
+            status = snapshot.get("status", "") if snapshot else ""
+            summary = f" Current status: {status[:160]!r}." if status else ""
+            _log(
+                f"Still waiting for Spotisaver's browser download event "
+                f"({now - started:.0f}s elapsed).{summary}",
+                started,
+            )
+            last_heartbeat = now
+        page.wait_for_timeout(1_000)
+
     _log("Browser download event received.", started)
-    download = download_info.value
+    download = download_events[0]
     suggested = Path(download.suggested_filename).name
     destination = target / suggested
     _log(f"Website suggested filename: {suggested!r}")
@@ -311,7 +428,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                     label = album_download.inner_text(timeout=3_000).strip()
                     _log(f"Selected album download control: {label!r}.", workflow_started)
                     stage = "album download click and browser event"
-                    result = _download_click(page, album_download, destination, timeout_ms)
+                    result = _download_click(page, album_download, destination)
                     _log(f"Album download workflow completed: {result.name}", workflow_started)
                     return [result]
 
@@ -337,7 +454,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                         )
                     _log(f"Found visible Download control for track {number}: {title!r}.", workflow_started)
                     stage = f"track {number} download"
-                    files.append(_download_click(page, button, destination, timeout_ms))
+                    files.append(_download_click(page, button, destination))
                     _log(f"Track {number}/{len(plan['tracks'])} saved: {files[-1].name}", workflow_started)
                 _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files

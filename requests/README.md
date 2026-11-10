@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [010: Wait for Spotisaver's queued browser download](010-spotisaver-wait-for-download-event/request.md) — monitor queue notices and modal progress until the browser signals the download, without a fixed timeout or repeated clicks.
+
 - [009: Poll Spotisaver for the album download button](009-spotisaver-button-first-readiness/request.md) — poll the real download button every second, click immediately when ready, and preserve strict archive validation.
 
 - [008: Spotisaver diagnostic logging](008-spotisaver-diagnostic-logging/request.md) — add timestamped stage, selector, click, download-event, and file-save diagnostics.

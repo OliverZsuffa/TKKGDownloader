@@ -13,6 +13,8 @@ from tkkgdownloader.audio_import import import_audio_files
 from tkkgdownloader.cli import build_parser
 from tkkgdownloader.spotisaver import (
     _download_click,
+    _download_failure,
+    _queue_retry_seconds,
     _find_album_download,
     _find_playlist_navigation,
     _log_selector_state,
@@ -226,44 +228,193 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
         syntax_warnings = [item for item in caught if issubclass(item.category, SyntaxWarning)]
         self.assertEqual(syntax_warnings, [])
 
-    def test_download_click_reports_and_saves_download(self):
+    def test_download_click_registers_listener_before_click_and_saves(self):
         class FakeDownload:
             suggested_filename = "album.zip"
 
             def save_as(self, path):
                 Path(path).write_bytes(b"archive")
 
-        class DownloadContext:
-            value = FakeDownload()
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
         class DownloadPage:
-            def expect_download(self, timeout):
-                self.timeout = timeout
-                return DownloadContext()
+            def __init__(self):
+                self.events = {}
+                self.closed = False
+                self.waited = 0
+                self.snapshot = {
+                    "status": "Downloading playlist...",
+                    "log": "",
+                    "failed": "",
+                    "progress": "0 100%",
+                    "controls": "[]",
+                }
+
+            def on(self, event, callback):
+                self.events[event] = callback
+
+            def evaluate(self, script):
+                return self.snapshot
+
+            def is_closed(self):
+                return self.closed
+
+            def wait_for_timeout(self, timeout):
+                self.waited += timeout
+                self.events["download"](FakeDownload())
 
         class ClickLocator:
-            clicked = False
+            def __init__(self, page):
+                self.page = page
+                self.clicked = 0
 
             def click(self):
-                self.clicked = True
+                self.clicked += 1
+                self.assert_listener_registered = "download" in self.page.events
 
         with tempfile.TemporaryDirectory() as temp:
+            page = DownloadPage()
+            locator = ClickLocator(page)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _download_click(page, locator, Path(temp))
+            self.assertEqual(locator.clicked, 1)
+            self.assertTrue(locator.assert_listener_registered)
+            self.assertEqual(result.name, "album.zip")
+            self.assertEqual(result.read_bytes(), b"archive")
+            self.assertIn("Registered browser download listener before clicking", output.getvalue())
+            self.assertIn("Browser download event received", output.getvalue())
+            self.assertIn("Saved file size: 7 bytes", output.getvalue())
+
+    def test_download_click_waits_through_queue_notice_without_second_click(self):
+        class FakeDownload:
+            suggested_filename = "album.zip"
+
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class DownloadPage:
+            def __init__(self):
+                self.events = {}
+                self.closed = False
+                self.waited = 0
+                self.snapshots = [
+                    {
+                        "status": "Downloading playlist...",
+                        "log": "Sorry, all download slots are busy right now. Please try again in 25 sec.",
+                        "failed": "",
+                        "progress": "0 100%",
+                        "controls": "[]",
+                    },
+                    {
+                        "status": "Downloading playlist...",
+                        "log": "",
+                        "failed": "",
+                        "progress": "50 100%",
+                        "controls": "[]",
+                    },
+                ]
+
+            def on(self, event, callback):
+                self.events[event] = callback
+
+            def evaluate(self, script):
+                return self.snapshots[min(self.waited, len(self.snapshots) - 1)]
+
+            def is_closed(self):
+                return self.closed
+
+            def wait_for_timeout(self, timeout):
+                self.waited += 1
+                if self.waited == 3:
+                    self.events["download"](FakeDownload())
+
+        class ClickLocator:
+            def __init__(self):
+                self.clicked = 0
+
+            def click(self):
+                self.clicked += 1
+
+        with tempfile.TemporaryDirectory() as temp:
+            page = DownloadPage()
             locator = ClickLocator()
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = _download_click(DownloadPage(), locator, Path(temp), 5_000)
-            self.assertTrue(locator.clicked)
+                result = _download_click(page, locator, Path(temp))
+            self.assertEqual(locator.clicked, 1)
+            self.assertEqual(page.waited, 3)
             self.assertEqual(result.name, "album.zip")
-            self.assertEqual(result.read_bytes(), b"archive")
-            self.assertIn("Issuing Playwright click", output.getvalue())
-            self.assertIn("Browser download event received", output.getvalue())
-            self.assertIn("Saved file size: 7 bytes", output.getvalue())
+            self.assertIn("queue is busy", output.getvalue())
+            self.assertIn("try again in 25s", output.getvalue())
+            self.assertIn("no second click will be issued", output.getvalue())
+
+    def test_queue_retry_delay_parser(self):
+        snapshot = {
+            "status": "Downloading playlist...",
+            "log": "Sorry, all download slots are busy. Please try again in 25 sec.",
+        }
+        self.assertEqual(_queue_retry_seconds(snapshot), 25)
+        snapshot["log"] = "All download slots are busy. Please try again in 2 minutes."
+        self.assertEqual(_queue_retry_seconds(snapshot), 120)
+
+    def test_queue_notice_is_not_treated_as_final_failure(self):
+        snapshot = {
+            "status": "Downloading playlist...",
+            "log": "Sorry, all download slots are busy. Please try again in 25 sec.",
+            "failed": "",
+        }
+        self.assertIsNone(_download_failure(snapshot))
+
+    def test_explicit_modal_failure_is_reported(self):
+        snapshot = {
+            "status": "Download failed",
+            "log": "Unable to download playlist",
+            "failed": "",
+        }
+        self.assertIn("Download failed", _download_failure(snapshot))
+
+    def test_page_closure_before_event_fails_with_last_status(self):
+        class ClosedPage:
+            def __init__(self):
+                self.callback = None
+
+            def on(self, event, callback):
+                self.callback = callback
+
+            def is_closed(self):
+                return True
+
+        class ClickLocator:
+            def click(self):
+                pass
+
+        with self.assertRaisesRegex(RuntimeError, "page closed before a browser download event"):
+            _download_click(ClosedPage(), ClickLocator(), Path("."))
+
+    def test_keyboard_interrupt_propagates_without_retry(self):
+        class InterruptPage:
+            def on(self, event, callback):
+                self.callback = callback
+
+            def evaluate(self, script):
+                return {"status": "Downloading playlist...", "log": "", "failed": "", "progress": "", "controls": ""}
+
+            def is_closed(self):
+                return False
+
+            def wait_for_timeout(self, timeout):
+                raise KeyboardInterrupt
+
+        class ClickLocator:
+            def __init__(self):
+                self.clicked = 0
+
+            def click(self):
+                self.clicked += 1
+
+        locator = ClickLocator()
+        with self.assertRaises(KeyboardInterrupt):
+            _download_click(InterruptPage(), locator, Path("."))
+        self.assertEqual(locator.clicked, 1)
 
 
 if __name__ == "__main__":
