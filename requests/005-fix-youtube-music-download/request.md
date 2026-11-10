@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Reproduction received from Oliver on 2026-11-10. No implementation changes have been made.
+Approved by Oliver on 2026-11-10. Implementation in progress.
 
 ## Objective
 
