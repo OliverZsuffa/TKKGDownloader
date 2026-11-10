@@ -1,30 +1,35 @@
-# Request 009: Make Spotisaver readiness button-first
+# Request 009: Poll Spotisaver for the album download button
 
 ## Problem
 
-The current workflow waits for the album title and every expected track title to appear in the page body before it inspects any download controls. The recent local run showed that the page opened successfully and the download button was visible, but the wait timed out after 120 seconds. Because control discovery happens after the wait, the program never attempted the visible button.
+The current workflow waits for the album title and every expected track title to appear in the page body before inspecting any download controls. The recent local run showed that the page opened successfully and the download button was visible, but the metadata wait timed out after 120 seconds. Because control discovery happened after that wait, the program never attempted the visible button.
 
-The run also emitted a Python SyntaxWarning because a JavaScript regular expression containing `\s` is embedded in a normal Python string.
+The run also emitted a Python SyntaxWarning because a JavaScript regular expression containing `\s` was embedded in a normal Python string.
 
-## Proposed change
+## Required workflow
 
-1. After navigation and body visibility, inspect the real album download control immediately.
-2. If `#downloadAllBtn` is visible and has the expected label, do not wait for every track title in page text. The URL already comes from the verified Spotify album ID in TKKGData. Log that the button-first readiness path was selected and click the actual button directly, without scrolling.
-3. Keep the album and archive validation safeguards. The downloaded archive must still be checked against all 40 expected tracks by the existing import and validation pipeline. If the control is absent, retain the existing album metadata wait and verification path, but capture page title, body text preview, and control inventory on timeout so the next failure is diagnosable.
-4. Make `_verify_album_page` conditional on the same readiness mode: in button-first mode, rely on the verified album ID and strict downloaded archive validation rather than requiring every track title to be rendered in page text. Do not weaken archive track count, title matching, ZIP safety, or one-episode constraints.
-5. Fix the JavaScript whitespace normalization string so Python no longer emits the invalid escape sequence warning.
-6. Add tests for immediate button-first readiness, no unnecessary wait when the real button is visible, fallback metadata wait when it is not, and warning-free JavaScript regex source.
-7. Update implementation notes, README if necessary, and Knowledge Base.
+1. Open visible Chromium and navigate to the canonical Spotisaver album URL built from the verified Spotify album ID in TKKGData.
+2. Wait only until the page body is visible.
+3. Immediately check for `#downloadAllBtn`.
+4. If it is not yet present and visible, wait one second and check again. Repeat for up to 120 seconds.
+5. Accept the control only when it is visible, enabled, and its text matches `Download entire playlist`.
+6. As soon as it is ready, click it directly. Do not scroll first and do not wait for all 40 track titles to appear in the page text.
+7. If the 120-second polling period expires, log the page title, a bounded body text preview, selector state, and visible control inventory. Only then may the existing `button.btn-playlist-download` navigation control be used, followed by a short additional poll for the real download button.
+8. If the album download control remains unavailable, retain the existing sequential individual-track fallback. Do not select unrelated controls.
+9. Validate the downloaded ZIP or MP3 files against every expected track from TKKGData. Require the exact expected count, unique filename matches, non-empty files, safe ZIP paths, and no unexpected audio files before merging.
+10. Fix the JavaScript whitespace normalization string so Python emits no invalid escape SyntaxWarning.
 
 ## Acceptance criteria
 
-- A visible `#downloadAllBtn` is detected immediately after page readiness.
-- When visible, Playwright attempts the button click without waiting 120 seconds and without scrolling.
-- The downloaded archive still has to pass full validation against the canonical 40-track list before merging.
-- If the button is not visible, the fallback path retains clear diagnostics and does not guess or click unrelated controls.
+- The first check for `#downloadAllBtn` happens immediately after the page body becomes visible.
+- The button is rechecked every second for up to 120 seconds.
+- A visible, enabled button with the expected label is clicked immediately without scrolling or waiting for track titles.
+- The 40-track archive validation remains strict and unchanged.
+- Timeout diagnostics explain what appeared on the page and which controls were visible.
+- Individual track fallback remains limited to the normal visible website controls.
 - Unit tests and GitHub Actions pass.
-- No real download is performed in CI.
+- CI performs no real Spotisaver download.
 
 ## Scope limits
 
-No hidden APIs, private endpoints, direct media URL extraction, stealth settings, or access-control workarounds. Keep the browser visible and preserve all existing safety checks.
+No hidden APIs, private endpoints, direct media URL extraction, stealth settings, CAPTCHA bypasses, login bypasses, or access-control workarounds. Keep the browser visible and preserve all existing safety checks.
