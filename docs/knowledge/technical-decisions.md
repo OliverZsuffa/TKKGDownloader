@@ -69,3 +69,14 @@ Generate two independent MP3 candidates. Candidate A uses the existing merger an
 Inspect embedded ID3 attached pictures across the source parts. Preserve distinct cover images and their source details. Embed the selected source image in the PCM-derived MP3. Populate metadata from TKKGData and consistent source tags only, then read back and verify every populated ID3 field and the artwork. Never invent missing values.
 
 Create a lossless review excerpt around every track boundary and record its timestamp, silence, RMS, and peak metrics. Reports must distinguish source validation failures from candidate validation results. Keep all intermediate files until the user has reviewed the recording. The real episode workflow runs locally because it involves a long browser download and media processing. CI runs synthetic fixtures only.
+
+## 011. Require deterministic Spotisaver track identity and a verified import manifest
+
+Spotisaver track filenames must map to canonical TKKGData titles through exact matching after Unicode, case, diacritic, and punctuation normalisation. Partial and fuzzy matching are prohibited. A leading numeric filename prefix is accepted only when it equals the expected canonical track number. Canonical track numbers must be positive, unique, contiguous, and one-based. Ambiguous, missing, extra, empty, or byte-identical source tracks are rejected before merging.
+
+Build the complete one-to-one mapping before creating numbered copies. Record the source filename and relative path, canonical track number and title, matching rule, file size, SHA-256 checksums, and available embedded ID3 title, artist, album, track number, and disc number in a versioned manifest. Embedded metadata is corroborating evidence only. Missing or conflicting tags are warnings and never override TKKGData or cause automatic reordering.
+
+Verify that each canonical copy has the same SHA-256 as its source. Immediately before every Spotisaver merge candidate, verify that the supplied paths exactly match the manifest order and that every file still has its recorded checksum. In R13 diagnostic mode preserve the portable manifest as `reports/track-manifest.json` and include mapping evidence in the source inspection reports. In normal mode keep the manifest in memory only.
+
+Checksums establish byte identity and traceability, not semantic audio correctness or the editorial correctness of TKKGData's sequence. Audio diagnostics and human listening remain necessary for those questions. Do not automatically reorder or repair audio based on tags, durations, fingerprints, or heuristics.
+
