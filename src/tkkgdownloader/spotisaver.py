@@ -186,7 +186,7 @@ def _find_album_download(page: Any) -> Any | None:
     if not candidate.is_visible() or not candidate.is_enabled():
         return None
     label = candidate.inner_text(timeout=3_000).strip()
-    if re.search(r"download\\s+entire\\s+playlist", label, re.I):
+    if re.search(r"download\s+entire\s+playlist", label, re.I):
         return candidate
     return None
 
@@ -232,7 +232,7 @@ def _log_page_snapshot(page: Any) -> None:
         _log(f"Could not read page title: {type(exc).__name__}: {exc}")
     try:
         body = page.locator("body").inner_text(timeout=3_000)
-        preview = re.sub(r"\\s+", " ", body).strip()[:1_200]
+        preview = re.sub(r"\s+", " ", body).strip()[:1_200]
         _log(f"Page text preview: {preview!r}")
     except Exception as exc:
         _log(f"Could not read page text: {type(exc).__name__}: {exc}")
@@ -255,7 +255,7 @@ def _log_visible_download_controls(page: Any) -> None:
     controls = page.locator("button:visible, a:visible").evaluate_all(
         r"""elements => elements.slice(0, 30).map(element => ({
             tag: element.tagName.toLowerCase(),
-            text: (element.innerText || element.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 100),
+            text: (element.innerText || element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100),
             id: element.id || "",
             title: element.getAttribute("title") || "",
             aria: element.getAttribute("aria-label") || "",
