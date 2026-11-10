@@ -157,7 +157,7 @@ def _render_progress_bar(snapshot: dict[str, str], width: int = 20) -> str | Non
     bar = "█" * filled + "░" * (width - filled)
     eta = _format_eta(snapshot)
     eta_text = f"  ETA {eta}" if eta else ""
-    if not re.search(r"Downloaded\\s+\\d+\\s+of\\s+\\d+", snapshot.get("status", ""), re.I):
+    if not re.search(r"Downloaded\s+\d+\s+of\s+\d+", snapshot.get("status", ""), re.I):
         return f"Spotisaver  [{bar}]  {percentage}%{eta_text}"
     return f"Spotisaver  [{bar}]  {completed}/{total} tracks  {percentage}%{eta_text}"
 
@@ -176,16 +176,17 @@ class _ProgressReporter:
 
     def update(self, snapshot: dict[str, str], started: float) -> None:
         line = _render_progress_bar(snapshot)
-        if line is None or line == self.last_line:
+        if line is None or (self.interactive and line == self.last_line):
             return
         now = time.monotonic()
         if self.interactive:
             print("\r" + line, end="", flush=True)
             self.active_line = True
+            self.last_line = line
         elif now - self.last_report >= 15:
             _log(f"{line}  ({now - started:.0f}s elapsed)", started)
             self.last_report = now
-        self.last_line = line
+            self.last_line = line
 
     def finish(self) -> None:
         if self.active_line:
