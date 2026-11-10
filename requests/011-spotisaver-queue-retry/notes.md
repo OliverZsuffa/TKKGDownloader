@@ -24,6 +24,7 @@
 
 ## Verification
 
-- Automated CI verification is pending.
+- GitHub Actions run 42811984143 passed: project installation, Python compilation, TKKGData contract smoke test, and all 55 unit tests.
+- PR #14 was squash merged into main as `baadeb5a7d092e85096a5d7c9d7d4f0fcf01585f`.
 - CI mocks the page and browser events. It does not make a live Spotisaver request.
 - Oliver must rerun the downloader locally to verify actual queue rejection, modal closure, repeated attempts, and the final download.
