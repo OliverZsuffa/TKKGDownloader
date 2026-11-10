@@ -23,7 +23,7 @@ TKKGDownloader is a read only consumer. It does not scrape sources, search Spoti
 6. Validate every downloaded MP3 against the expected track titles and order.
 7. Automatically merge the episode parts into one MP3 with FFmpeg after every track has passed validation.
 
-Spotisaver mode is intentionally restricted to one episode per invocation. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.
+Spotisaver mode is intentionally restricted to one episode per invocation. It does not bypass site protections, use private endpoints, or run unattended catalogue downloads.\n\nFor a one-time quality investigation, the optional `--diagnostic-dir` mode preserves the Spotisaver archive and source tracks, inspects and fully decodes every source, compares the existing merge against a lossless PCM concatenation encoded once at 320 kbit/s, verifies embedded artwork and ID3 metadata, and creates a lossless review file for every track boundary. This mode runs locally and never replaces the normal episode output.
 
 ## Intended environment
 
