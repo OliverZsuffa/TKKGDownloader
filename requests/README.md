@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [013: Diagnose and produce a high-quality episode 150 merge](013-episode-150-audio-quality-diagnostics/request.md) — preserve Spotisaver sources, inspect all 40 tracks, compare stream-copy and decoded PCM merging, and review all 39 boundaries.
+
 - [012: Complete Spotisaver ZIP download and improve progress output](012-spotisaver-zip-button-and-progress/request.md) — read the ETA and track progress, then click the final visible Download ZIP control to trigger the actual browser download.
 
 - [011: Retry Spotisaver after a queue rejection](011-spotisaver-queue-retry/request.md) — wait 30 seconds after an explicit queue rejection, close the modal, and submit the album request again.
