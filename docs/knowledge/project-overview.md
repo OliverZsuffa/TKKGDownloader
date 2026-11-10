@@ -30,7 +30,7 @@ The dataset's `tracks` array describes episode chapter segmentation. It is not t
 
 - Windows and PowerShell
 - Python 3.11 or later
-- spotDL 4.5.2
+- yt-dlp (installed through the project dependency)
 - FFmpeg
 
-Install the project with `py -m pip install -e .`. FFmpeg must also be installed and available on PATH.
+Install the project with `py -m pip install -e .`. FFmpeg must also be installed and available on PATH. The downloader uses yt-dlp directly with exact verified YouTube Music video URLs from TKKGData.
