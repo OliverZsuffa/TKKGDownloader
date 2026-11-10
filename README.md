@@ -50,7 +50,7 @@ Get help:
 
     py tkkg.py --help
 
-Spotisaver mode accepts exactly one episode per invocation. Run it separately for each episode. It opens a visible browser and checks the album and tracklist against TKKGData. It first clicks the visible `Download entire playlist` button directly. Only if that button is not visible does it click the intermediate `Download Playlist` navigation control to reveal the action area. If no verified album action is available, it logs visible controls before considering individual track downloads. It does not use private endpoints, hidden APIs, stealth browser settings, or access-control workarounds. If the website changes its interface or presents a restriction, the run stops.
+Spotisaver mode accepts exactly one episode per invocation. Run it separately for each episode. It opens a visible browser and checks the album and tracklist against TKKGData. It first clicks the visible `Download entire playlist` button directly. Only if that button is not visible does it click the intermediate `Download Playlist` navigation control to reveal the action area. Every stage prints timestamped diagnostics, including selector counts and visibility, the direct-first decision, click completion, browser download events, suggested filename, save destination, file size, and elapsed time. Failures identify the stage and retain exception details. If no verified album action is available, it logs visible controls before considering individual track downloads. It does not use private endpoints, hidden APIs, stealth browser settings, or access-control workarounds. If the website changes its interface or presents a restriction, the run stops.
 
 ## Data ownership
 
