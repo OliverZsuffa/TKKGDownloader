@@ -8,7 +8,7 @@ Make normal Spotisaver downloads produce the same validated, artwork-bearing MP3
 
 - Extract reusable artwork extraction, metadata selection, metadata writing, and readback verification from `audio_diagnostics.py` into a production module, without changing the established diagnostic output format unnecessarily.
 - Use the verified canonical track order when inspecting source metadata and artwork.
-- Preserve the original image bytes and MIME type. Select the first valid front-cover image in canonical track order, using the existing diagnostic selection rules.
+- Preserve the original image bytes and MIME type. Select the first valid embedded cover image in canonical track order, using the existing diagnostic selection rules.
 - Set episode title, album title, track number, total track count, and only source-supported artist, album artist, genre, date, and other tags. Do not invent optional source metadata.
 - Embed the selected cover in the final MP3 and verify the exact image bytes and all written metadata by reading the final file back.
 - Missing artwork is a clearly reported metadata outcome, not a fabricated substitute. A metadata write or verification failure is a failed download.
