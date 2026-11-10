@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved by Oliver on 2026-11-10. Implementation committed to feature/spotisaver-import. CI and a real Windows browser download remain to be verified.
+Approved by Oliver on 2026-11-10. Implementation committed to feature/spotisaver-import. CI passed on commit 03fc8889c53bf95a5803ec7e19d49cb306d389de. A real Windows browser download remains to be verified.
 
 ## Implemented
 
