@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import re
+import sys
 import time
 import traceback
 from typing import Any
@@ -120,14 +121,14 @@ def _read_download_modal(page: Any) -> dict[str, str]:
 
 def _parse_track_progress(snapshot: dict[str, str]) -> tuple[int, int, int] | None:
     """Return completed tracks, total tracks, and percentage from a modal snapshot."""
-    match = re.search(r"Downloaded\\s+(\\d+)\\s+of\\s+(\\d+)", snapshot.get("status", ""), re.I)
+    match = re.search(r"Downloaded\s+(\d+)\s+of\s+(\d+)", snapshot.get("status", ""), re.I)
     if match:
         completed, total = int(match.group(1)), int(match.group(2))
         if total > 0 and 0 <= completed <= total:
             return completed, total, round(completed * 100 / total)
 
     progress = snapshot.get("progress", "")
-    value = re.search(r"(\\d+(?:\\.\\d+)?)", progress)
+    value = re.search(r"(\d+(?:\.\d+)?)", progress)
     if value:
         percentage = max(0, min(100, round(float(value.group(1)))))
         return percentage, 100, percentage
@@ -179,7 +180,7 @@ class _ProgressReporter:
             return
         now = time.monotonic()
         if self.interactive:
-            print("\\r" + line, end="", flush=True)
+            print("\r" + line, end="", flush=True)
             self.active_line = True
         elif now - self.last_report >= 15:
             _log(f"{line}  ({now - started:.0f}s elapsed)", started)
@@ -199,7 +200,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
         return None
 
     try:
-        buttons = modal.first.get_by_role("button", name=re.compile(r"^\\s*Download ZIP\\s*$", re.I))
+        buttons = modal.first.get_by_role("button", name=re.compile(r"^\s*Download ZIP\s*$", re.I))
         count = buttons.count()
         if count == 1:
             candidate = buttons.first
@@ -218,7 +219,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
     for index in range(buttons.count()):
         candidate = buttons.nth(index)
         try:
-            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
             if re.fullmatch(r"Download ZIP", label, re.I):
                 matches.append(candidate)
         except Exception:
