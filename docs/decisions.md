@@ -8,9 +8,9 @@ Oliver approved the three-repository migration on 2026-11-09. TKKGData owns epis
 
 The downloader must not query TKKGTracker, search Spotify, search YouTube Music, scrape provider pages, or write corrections back to TKKGData. It downloads only verified source pairings from the dataset.
 
-## 003. Prefer playlist pairing, then exact individual track pairs
+## 003. Download exact verified YouTube video URLs directly
 
-Use the verified YouTube Music album playlist paired with the Spotify album when spotDL supports the source types. If unavailable or unsuccessful, use each exact YouTube Music song URL paired with its Spotify track URL. Never fall back to unverified text search.
+Use yt-dlp directly with the exact individual YouTube Music video URLs and IDs validated from TKKGData. Do not resolve playlists through spotDL. The playlist remains provenance metadata. Spotify track metadata controls canonical names and ordering.
 
 ## 004. Dynamic track integrity
 
