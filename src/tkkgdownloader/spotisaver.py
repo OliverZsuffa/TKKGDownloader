@@ -20,10 +20,6 @@ def _normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value)
 
 
-def _album_title(title: str) -> str:
-    return title.split("/", 1)[-1].strip() if "/" in title else title.strip()
-
-
 def _log(message: str, started: float | None = None) -> None:
     """Print a timestamped, flushed diagnostic line."""
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -64,67 +60,6 @@ def _log_selector_state(page: Any, selector: str) -> int:
             f"attributes={attributes!r}"
         )
     return count
-
-
-def _wait_for_album_data(page: Any, plan: dict, timeout_ms: int = 120_000) -> None:
-    """Wait for Spotisaver's client-side album lookup and tracklist to finish."""
-    album = _normalize(_album_title(plan["spotify_album_title"]))
-    track_titles = [
-        _normalize(track["spotify_title"])
-        for track in plan["tracks"]
-        if len(_normalize(track["spotify_title"])) >= 5
-    ]
-    if len(album) < 5 or not track_titles:
-        raise RuntimeError("TKKGData does not contain enough album identity data to verify Spotisaver.")
-
-    _log(
-        "Waiting for Spotisaver's client-side album lookup and complete tracklist "
-        f"(timeout {timeout_ms / 1000:.0f}s)..."
-    )
-    wait_started = time.monotonic()
-    page.wait_for_function(
-        """([expectedAlbum, expectedTracks]) => {
-            const body = document.body?.innerText || "";
-            const normalize = value => value
-                .normalize("NFKD")
-                .replace(/[\\u0300-\\u036f]/g, "")
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "");
-            const content = normalize(body);
-            return content.includes(expectedAlbum) &&
-                expectedTracks.every(title => content.includes(title));
-        }""",
-        arg=[album, track_titles],
-        timeout=timeout_ms,
-    )
-    _log(
-        f"Album metadata and all {len(track_titles)} expected track titles are present "
-        f"(waited {time.monotonic() - wait_started:.1f}s)."
-    )
-
-
-def _verify_album_page(page: Any, plan: dict) -> None:
-    _log("Verifying visible album identity and every expected track title...")
-    body = page.locator("body").inner_text(timeout=15_000)
-    normalized_body = _normalize(body)
-    expected_album = _normalize(_album_title(plan["spotify_album_title"]))
-    if len(expected_album) < 5 or expected_album not in normalized_body:
-        raise RuntimeError(
-            "Spotisaver page does not visibly identify the expected album "
-            f"{plan['spotify_album_title']!r}. No download was started."
-        )
-    missing = []
-    for track in plan["tracks"]:
-        title = _normalize(track["spotify_title"])
-        if len(title) >= 5 and title not in normalized_body:
-            missing.append(track["track_number"])
-    if missing:
-        preview = ", ".join(str(number) for number in missing[:8])
-        raise RuntimeError(
-            "Spotisaver's visible tracklist does not match TKKGData. "
-            f"Track titles not found: {preview}. No download was started."
-        )
-    _log(f"Album verification passed: {plan['spotify_album_title']!r}, {len(plan['tracks'])} tracks.")
 
 
 def _download_click(page: Any, locator: Any, target: Path, timeout_ms: int) -> Path:
