@@ -1,6 +1,6 @@
 # TKKGData integration
 
-**Status: implemented on the Request 004 branch.**
+**Status: implemented.**
 
 ## Ownership
 
@@ -17,28 +17,18 @@ The current supported schema major version is 1.x. The client validates the meta
 
 ## Verified audio source selection
 
-A downloadable episode must contain audio_release with verification.status set to verified.
+A downloadable episode must contain audio_release with verification.status set to verified. The release contains Spotify album metadata, optional YouTube Music playlist metadata, individual YouTube Music song URLs, exact Spotify track pairings, track numbering, and verification evidence.
 
-The release contains:
-- Spotify album ID, URL, title, and actual matched track count.
-- An optional verified YouTube Music playlist URL and track count.
-- Individual YouTube Music song URLs and video IDs.
-- The exact Spotify track URL and ID paired with each YouTube Music song.
-- Track numbering and verification evidence.
-
-The downloader validates all IDs against their URLs, validates the cross-provider counts, and requires a contiguous one-based track sequence.
+The downloader validates all IDs against their URLs, validates cross-provider counts, and requires a contiguous one-based track sequence.
 
 ## Download execution
 
-1. Validate the complete ordered track mapping from TKKGData.
-2. Invoke yt-dlp directly for each exact YouTube Music video URL. Do not ask spotDL to resolve a playlist or song.
-3. Use the paired Spotify track metadata for deterministic track naming and ordering.
-4. Extract MP3 at 192 kbit/s into an isolated temporary album directory.
-5. Require every expected file to exist and be non-empty, and validate the complete track count and contiguous numbering before merging.
-6. Never perform Spotify or YouTube Music text searches. Never write corrections back to TKKGData.
+The default provider invokes yt-dlp directly for each exact YouTube Music video URL and writes MP3 files to a temporary directory.
 
-The playlist URL remains provenance metadata. The direct track URLs are the execution inputs. This avoids the spotDL 4.5.2 failure observed during episode 150, where playlist resolution reached a download URL with a missing video ID (watch?v=None).
+The optional Spotisaver provider opens the public album page in visible Chromium through Playwright. It verifies the album identity and track titles, uses normal website download controls, imports the resulting ZIP or MP3 files, and requires an exact filename match for every expected track before merging.
+
+The playlist URL remains provenance metadata. Neither provider performs text search or writes corrections back to TKKGData.
 
 ## Compatibility boundary
 
-The CLI, episode range processing, output naming, confirmation behaviour, overwrite protection, FFmpeg merge, and local files remain TKKGDownloader responsibilities. No scraper, shared catalogue, or provider discovery belongs in this repository.
+The CLI, episode range processing, output naming, confirmation behaviour, overwrite protection, FFmpeg merge, and local files remain TKKGDownloader responsibilities. No independent catalogue or source discovery belongs in this repository.
