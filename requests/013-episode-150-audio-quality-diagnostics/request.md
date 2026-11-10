@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Awaiting Oliver's approval.
+Implementation complete on PR #20. Automated verification passed; local episode processing and human review remain pending.
 
 ## Objective
 

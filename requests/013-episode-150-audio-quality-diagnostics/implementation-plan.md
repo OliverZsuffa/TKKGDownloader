@@ -67,7 +67,7 @@ Use the same FFmpeg and FFprobe executables selected by the application. Include
 
 ## 3. Generate independent merge candidates
 
-Keep the existing `merge_tracks()` implementation unchanged for the baseline candidate.
+Keep the existing `merge_tracks()` default behaviour unchanged. Add an optional diagnostics collector so the baseline run can report whether stream copy or the existing 192 kbit/s fallback was used, including each command and result.
 
 ### Candidate A: current stream-copy method
 
@@ -79,7 +79,7 @@ Keep the existing `merge_tracks()` implementation unchanged for the baseline can
 ### PCM master and Candidate B: decode, concatenate, encode once
 
 - Decode all 40 MP3 tracks to a common PCM representation before concatenation.
-- Use a consistent sample rate and channel layout. Prefer the source's common native format when all tracks agree. If they differ, choose a documented common format that does not unnecessarily reduce the source material.
+- Use a consistent sample rate and channel count. Preserve the common native values when all tracks agree. If they differ, use the highest source sample rate and channel count so no source is downsampled or downmixed, and document the selected format.
 - Use uncompressed PCM with sufficient precision for a transparent intermediate. Do not create a new lossy intermediate.
 - Concatenate the decoded PCM segments in canonical order, with each segment beginning immediately after the preceding segment. Do not insert fades, crossfades, silence, or gaps.
 - Save the lossless concatenated master as WAV.
@@ -113,7 +113,7 @@ For every transition:
 - Include enough context on both sides to hear whether dialogue, music, or effects are cut off. Use a configurable default of approximately 8 to 10 seconds on each side, shortened only when a source track is itself shorter.
 - Label each excerpt with the two track numbers and the expected boundary timestamp in a companion text index.
 - Assemble the excerpts in transition order into one review WAV or another lossless format.
-- Analyse short-term silence, peak and RMS levels, and abrupt waveform changes around the boundary. Treat these as flags for human review, not automatic repair instructions.
+- Analyse short-term silence, peak and RMS levels in the before and after excerpts. Treat these as flags for human review, not automatic repair instructions.
 
 Also provide a way to inspect the full source tracks independently. Missing audio can occur inside a track, not only at a chapter boundary.
 

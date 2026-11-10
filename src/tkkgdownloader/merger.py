@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 
 def track_number(path: Path) -> int:
@@ -28,7 +29,10 @@ def _ffconcat_quote(path: Path) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def merge_tracks(tracks: list[Path], output: Path, ffmpeg: str = "ffmpeg") -> None:
+def merge_tracks(
+    tracks: list[Path], output: Path, ffmpeg: str = "ffmpeg",
+    diagnostics: dict[str, Any] | None = None,
+) -> None:
     ordered = ordered_tracks(tracks)
     output.parent.mkdir(parents=True, exist_ok=True)
     concat_file = output.with_suffix(".concat.txt")
@@ -44,6 +48,13 @@ def merge_tracks(tracks: list[Path], output: Path, ffmpeg: str = "ffmpeg") -> No
             "-c", "copy", str(temporary_output),
         ]
         result = subprocess.run(command, capture_output=True, text=True, check=False)
+        attempts = [{
+            "method": "stream_copy",
+            "command": command,
+            "returncode": result.returncode,
+            "stderr": result.stderr,
+        }]
+        selected_method = "stream_copy"
         if result.returncode != 0:
             # Different MP3 stream parameters can prevent stream-copy concatenation.
             command = [
@@ -52,6 +63,15 @@ def merge_tracks(tracks: list[Path], output: Path, ffmpeg: str = "ffmpeg") -> No
                 "-c:a", "libmp3lame", "-b:a", "192k", str(temporary_output),
             ]
             result = subprocess.run(command, capture_output=True, text=True, check=False)
+            selected_method = "reencode_192k_fallback"
+            attempts.append({
+                "method": selected_method,
+                "command": command,
+                "returncode": result.returncode,
+                "stderr": result.stderr,
+            })
+        if diagnostics is not None:
+            diagnostics.update({"attempts": attempts, "selected_method": selected_method})
         if result.returncode != 0:
             detail = (result.stderr or "FFmpeg returned an error.").strip()
             raise RuntimeError(f"FFmpeg could not merge the tracks: {detail}")

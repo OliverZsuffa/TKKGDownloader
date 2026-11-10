@@ -43,11 +43,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="yt-dlp",
         help="Audio provider (default: yt-dlp). Spotisaver processes exactly one episode per run.",
     )
+    parser.add_argument(
+        "--diagnostic-dir",
+        type=Path,
+        help="Preserve Spotisaver source files and build validated audio diagnostics in this new directory.",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.diagnostic_dir is not None and args.provider != "spotisaver":
+        print("ERROR: --diagnostic-dir requires --provider spotisaver.", file=sys.stderr)
+        return 2
+    if args.diagnostic_dir is not None and len(args.episodes) != 1:
+        print("ERROR: Diagnostic mode accepts exactly one episode per run.", file=sys.stderr)
+        return 2
     if args.provider == "spotisaver" and len(args.episodes) != 1:
         print(
             "ERROR: Spotisaver mode accepts exactly one episode per run. "
@@ -72,6 +83,7 @@ def main() -> int:
                 episode,
                 args.output_dir,
                 overwrite=args.overwrite,
+                **({"diagnostic_dir": args.diagnostic_dir} if args.provider == "spotisaver" else {}),
             )
             if result is not None:
                 completed += 1

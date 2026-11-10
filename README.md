@@ -30,6 +30,12 @@ Use Spotisaver through a visible Chromium browser for one episode:
 
     py tkkg.py 150 --provider spotisaver
 
+Run the quality-first diagnostic workflow in a new, empty directory:
+
+    py tkkg.py 150 --provider spotisaver --diagnostic-dir "D:\\TKKG\\episode-150-diagnostics"
+
+Diagnostic mode preserves the original Spotisaver archive, extracted source files, and validated numbered tracks. It fully decodes every source, records FFprobe metadata and silence indicators, compares the existing stream-copy merger with a PCM master encoded once at 320 kbit/s, extracts and verifies embedded cover artwork and ID3 metadata, and creates a lossless review file for every track transition. It writes JSON and readable reports under the diagnostic directory. The two MP3 candidates are diagnostic outputs only. It does not replace or create the normal final episode file. The diagnostic directory must be new or empty. Existing files are never overwritten. Keep the workspace until the source and boundary review is complete. This workflow runs locally and is intentionally not part of GitHub Actions.
+
 Download an inclusive range with the default provider:
 
     py tkkg.py 1-10

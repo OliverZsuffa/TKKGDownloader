@@ -908,6 +908,8 @@ def download_and_import(
         logger, log_path = _create_diagnostic_logger(episode_number)
         _ACTIVE_DIAGNOSTIC_LOGGER = logger
         _ACTIVE_PROGRESS_REPORTER = _ProgressReporter()
+        work_dir.mkdir(parents=True, exist_ok=True)
+        (work_dir / "spotisaver-log-path.txt").write_text(str(log_path), encoding="utf-8")
     except OSError as exc:
         print(f"Diagnostic log unavailable: {exc}", flush=True)
         _ACTIVE_DIAGNOSTIC_LOGGER = None
