@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tkkgdownloader.downloader import download_episode
+from tkkgdownloader.downloader import download_episode, download_episode_spotisaver
 from tkkgdownloader.episodes import Episode
 
 
@@ -121,6 +121,22 @@ class DownloaderSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "did not produce the expected MP3"):
                 download_episode(episode, Path(temp_dir))
         merge.assert_not_called()
+
+
+    def test_spotisaver_download_merges_automatically_without_prompt(self):
+        episode = Episode(149, "Tims gefährlichster Gegner", audio_release())
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("tkkgdownloader.downloader.shutil.which", return_value="ffmpeg"), \
+             patch(
+                 "tkkgdownloader.downloader.download_and_import",
+                 return_value=[Path("01 - Teil 01.mp3"), Path("02 - Teil 02.mp3")],
+             ), \
+             patch("tkkgdownloader.downloader.merge_tracks") as merge, \
+             patch("builtins.input", side_effect=AssertionError("Merge must not ask for confirmation")):
+            result = download_episode_spotisaver(episode, Path(temp_dir))
+
+        self.assertTrue(result.name.startswith("TKKG 149"))
+        self.assertEqual(len(merge.call_args.args[0]), 2)
 
     def test_missing_verified_mapping_fails_clearly(self):
         episode = Episode(150, "Heiße Nächte im Dezember")
