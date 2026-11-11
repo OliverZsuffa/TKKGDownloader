@@ -104,3 +104,8 @@ The duration tolerance is max(3 seconds, 0.1 seconds per source track), allowing
 Diagnostic duration outlier analysis treats track 1 separately because TKKG episode releases commonly include an introduction and disclaimer in the first segment. The median for ordinary segments is calculated from tracks 2 onward. Track 1 is flagged only when it is implausibly short or exceeds the dedicated intro threshold. This is a review heuristic, not evidence that audio is defective.
 
 Checksums and successful decoding establish file identity and technical readability, not semantic correctness or audible continuity. Boundary review and human listening remain necessary.
+
+
+## 014. Finalize production MP3 metadata before publication
+
+Normal Spotisaver downloads and diagnostic candidates share one metadata implementation. Extract the first valid embedded JPEG or PNG in canonical track order, preserve the source image bytes, write episode and verified album metadata, and include optional source tags only when consistent across all tracks. Read back and verify every written field and the embedded cover bytes. Missing source artwork is reported without substituting generated artwork. Merge and finalize into a temporary candidate in the destination filesystem, probe and fully decode it after metadata writing, and only then atomically replace the destination. A failed replacement must leave an existing final file untouched. Queue waiting is presented as one cumulative line, and ETA parsing supports seconds-only as well as minutes-and-seconds formats.

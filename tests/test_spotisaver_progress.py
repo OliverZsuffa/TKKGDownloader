@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import re
+from unittest.mock import patch
 
 from tkkgdownloader.spotisaver import (
     _find_zip_download_button,
@@ -13,6 +14,7 @@ from tkkgdownloader.spotisaver import (
     _parse_track_progress,
     _render_progress_bar,
     _download_click,
+    _ProgressReporter,
 )
 
 
@@ -132,6 +134,9 @@ class SpotisaverProgressTests(unittest.TestCase):
     def test_formats_eta_and_rejects_invalid_values(self):
         self.assertEqual(_format_eta({"eta_minutes": "1", "eta_seconds": "32"}), "1m 32s")
         self.assertEqual(_format_eta({"eta_minutes": "0", "eta_seconds": "8"}), "8s")
+        self.assertEqual(_format_eta({"eta_minutes": "", "eta_seconds": "42"}), "42s")
+        self.assertEqual(_format_eta({"eta": "Estimated time: 42s"}), "42s")
+        self.assertEqual(_format_eta({"eta": "Estimated time: 1m 05s"}), "1m 05s")
         self.assertIsNone(_format_eta({"eta_minutes": "1", "eta_seconds": "75"}))
         self.assertIsNone(_format_eta({"eta_minutes": "", "eta_seconds": ""}))
 
@@ -147,6 +152,29 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertIn("ETA 1m 32s", line)
         self.assertIn("█", line)
         self.assertIn("░", line)
+
+    def test_queue_wait_is_printed_once_in_noninteractive_output(self):
+        reporter = _ProgressReporter()
+        reporter.interactive = False
+        output = io.StringIO()
+        with patch("tkkgdownloader.spotisaver.time.monotonic", side_effect=[100.0, 100.0, 102.0]):
+            with contextlib.redirect_stdout(output):
+                reporter.start_queue_wait()
+                reporter.finish_queue_wait()
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(lines[0], r"^Waiting for download slot\.\.\. \d+m \d{2}s elapsed$")
+
+    def test_queue_wait_uses_one_carriage_return_line_interactively(self):
+        reporter = _ProgressReporter()
+        reporter.interactive = True
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            reporter.start_queue_wait()
+            reporter.update_queue_wait()
+            reporter.finish_queue_wait()
+        self.assertEqual(output.getvalue().count("\r"), 1)
+        self.assertEqual(output.getvalue().count("\n"), 1)
 
     def test_finds_unique_visible_enabled_zip_button(self):
         button = FakeButton("Download ZIP")

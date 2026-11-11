@@ -52,6 +52,8 @@ class _ProgressReporter:
         self.active_line = False
         self.last_line: str | None = None
         self.last_report = time.monotonic()
+        self.queue_wait_started: float | None = None
+        self.queue_wait_last_line: str | None = None
 
     def _style(self, value: str, tone: str) -> str:
         colour = self._COLOURS.get(tone)
@@ -85,6 +87,38 @@ class _ProgressReporter:
             print(line, flush=True)
             self.last_report = time.monotonic()
             self.last_line = line
+
+    def start_queue_wait(self) -> None:
+        self.queue_wait_started = time.monotonic()
+        self.queue_wait_last_line = None
+        self.update_queue_wait()
+
+    def update_queue_wait(self) -> None:
+        if self.queue_wait_started is None:
+            return
+        elapsed = int(time.monotonic() - self.queue_wait_started)
+        line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
+        if self.interactive:
+            if line != self.queue_wait_last_line:
+                print("\r" + line, end="", flush=True)
+                self.active_line = True
+                self.queue_wait_last_line = line
+
+    def finish_queue_wait(self) -> float:
+        if self.queue_wait_started is None:
+            return 0.0
+        elapsed = max(0.0, time.monotonic() - self.queue_wait_started)
+        if self.interactive:
+            self.finish()
+        elif elapsed >= 1:
+            seconds = int(elapsed)
+            print(
+                f"Waiting for download slot... {seconds // 60}m {seconds % 60:02d}s elapsed",
+                flush=True,
+            )
+        self.queue_wait_started = None
+        self.queue_wait_last_line = None
+        return elapsed
 
     def finish(self) -> None:
         if self.active_line:
@@ -245,12 +279,21 @@ def _parse_track_progress(snapshot: dict[str, str]) -> tuple[int, int, int] | No
 
 def _format_eta(snapshot: dict[str, str]) -> str | None:
     """Format a visible ETA without treating it as a completion signal."""
+    raw_minutes = snapshot.get("eta_minutes", "").strip()
+    raw_seconds = snapshot.get("eta_seconds", "").strip()
     try:
-        minutes = int(snapshot.get("eta_minutes", ""))
-        seconds = int(snapshot.get("eta_seconds", ""))
+        if raw_seconds:
+            minutes = int(raw_minutes or "0")
+            seconds = int(raw_seconds)
+        else:
+            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", snapshot.get("eta", ""), re.I)
+            if not match:
+                return None
+            minutes = int(match.group(1) or "0")
+            seconds = int(match.group(2))
     except (TypeError, ValueError):
         return None
-    if minutes < 0 or not 0 <= seconds <= 59:
+    if minutes < 0 or not 0 <= seconds <= 59 or (minutes == 0 and seconds == 0):
         return None
     return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
@@ -415,7 +458,7 @@ def _download_click(
         _log(f"CLICK FAILED: {type(exc).__name__}: {exc}", started)
         raise
 
-    report_stage("Waiting for queue...", "info")
+    progress_reporter.start_queue_wait()
     _log(
         "Click call returned successfully. Monitoring Spotisaver's queue and waiting "
         "without a fixed download-event timeout.",
@@ -442,15 +485,12 @@ def _download_click(
         queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
         now = time.monotonic()
 
+        progress_reporter.update_queue_wait()
         if queue_busy:
             if queue_started is None:
                 queue_started = now
                 stated_delay = _queue_retry_seconds(snapshot)
                 delay_text = f" Website retry instruction: {stated_delay}s." if stated_delay else ""
-                report_stage(
-                    f"Queue busy. Retrying in {queue_retry_wait_ms / 1000:.0f} seconds.",
-                    "warning",
-                )
                 _log(
                     f"Spotisaver rejected attempt {attempt}: all download slots are busy."
                     f"{delay_text} Will close the queue modal and retry after "
@@ -533,7 +573,8 @@ def _download_click(
             # If the queue notice clears before the retry deadline, the normal
             # processing path below takes over and no retry is issued.
         elif queue_started is not None:
-            report_stage("Downloading...", "info")
+            progress_reporter.finish_queue_wait()
+            report_stage("Download slot acquired.", "success")
             _log(
                 f"Spotisaver queue notice cleared during attempt {attempt}. "
                 "Continuing to monitor processing without another click.",
@@ -542,6 +583,13 @@ def _download_click(
             queue_started = None
 
         if snapshot:
+            combined_for_acceptance = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+            if not queue_busy and progress_reporter.queue_wait_started is not None and (
+                _parse_track_progress(snapshot) is not None
+                or re.search(r"creating ZIP archive|ZIP archive created", combined_for_acceptance, re.I)
+            ):
+                progress_reporter.finish_queue_wait()
+                report_stage("Download slot acquired.", "success")
             if not queue_busy:
                 progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
@@ -614,6 +662,9 @@ def _download_click(
             last_heartbeat = now
         page.wait_for_timeout(1_000)
 
+    if progress_reporter.queue_wait_started is not None:
+        progress_reporter.finish_queue_wait()
+        report_stage("Download slot acquired.", "success")
     progress_reporter.finish()
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]

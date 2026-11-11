@@ -123,20 +123,54 @@ class DownloaderSourceTests(unittest.TestCase):
         merge.assert_not_called()
 
 
-    def test_spotisaver_download_merges_automatically_without_prompt(self):
+    def test_spotisaver_download_merges_and_finalizes_metadata_automatically(self):
         episode = Episode(149, "Tims gefährlichster Gegner", audio_release())
+        def create_candidate(tracks, output, **kwargs):
+            output.write_bytes(b"mock merged audio")
+        completed = type("Completed", (), {"returncode": 0, "stdout": "1.0", "stderr": ""})()
         with tempfile.TemporaryDirectory() as temp_dir, \
-             patch("tkkgdownloader.downloader.shutil.which", return_value="ffmpeg"), \
+             patch("tkkgdownloader.downloader.shutil.which", side_effect=["ffmpeg", "ffprobe"]), \
              patch(
                  "tkkgdownloader.downloader.download_and_import",
                  return_value=[Path("01 - Teil 01.mp3"), Path("02 - Teil 02.mp3")],
              ), \
-             patch("tkkgdownloader.downloader.merge_tracks") as merge, \
+             patch("tkkgdownloader.downloader.merge_tracks", side_effect=create_candidate) as merge, \
+             patch("tkkgdownloader.downloader.finalize_metadata", return_value={
+                 "verified": True, "artwork_embedded": True,
+             }) as finalize, \
+             patch("tkkgdownloader.downloader.subprocess.run", return_value=completed), \
              patch("builtins.input", side_effect=AssertionError("Merge must not ask for confirmation")):
             result = download_episode_spotisaver(episode, Path(temp_dir))
+            self.assertTrue(result.is_file())
+            self.assertEqual(len(merge.call_args.args[0]), 2)
+            finalize.assert_called_once()
 
         self.assertTrue(result.name.startswith("TKKG 149"))
-        self.assertEqual(len(merge.call_args.args[0]), 2)
+
+    def test_metadata_failure_preserves_existing_output(self):
+        episode = Episode(149, "Tims gefährlichster Gegner", audio_release())
+        def create_candidate(tracks, output, **kwargs):
+            output.write_bytes(b"new candidate audio")
+        completed = type("Completed", (), {"returncode": 0, "stdout": "1.0", "stderr": ""})()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            final_path = output_dir / "TKKG 149 - Tims gefährlichster Gegner.mp3"
+            final_path.write_bytes(b"existing valid output")
+            with patch("tkkgdownloader.downloader.shutil.which", side_effect=["ffmpeg", "ffprobe"]), \
+                 patch(
+                     "tkkgdownloader.downloader.download_and_import",
+                     return_value=[Path("01 - Teil 01.mp3"), Path("02 - Teil 02.mp3")],
+                 ), \
+                 patch("tkkgdownloader.downloader.merge_tracks", side_effect=create_candidate), \
+                 patch(
+                     "tkkgdownloader.downloader.finalize_metadata",
+                     side_effect=RuntimeError("metadata verification failed"),
+                 ), \
+                 patch("tkkgdownloader.downloader.subprocess.run", return_value=completed):
+                with self.assertRaisesRegex(RuntimeError, "metadata verification failed"):
+                    download_episode_spotisaver(episode, output_dir, overwrite=True)
+            self.assertEqual(final_path.read_bytes(), b"existing valid output")
+            self.assertEqual(list(output_dir.glob("*.partial.mp3")), [])
 
     def test_missing_verified_mapping_fails_clearly(self):
         episode = Episode(150, "Heiße Nächte im Dezember")

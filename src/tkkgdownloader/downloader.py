@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from pathlib import Path
 from .audio_sources import validate_audio_release
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
+from .metadata import finalize_metadata
 from .spotisaver import download_and_import, finish_console_output, report_stage
 
 
@@ -218,8 +220,15 @@ def download_episode_spotisaver(
         raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
 
     ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
+    ffprobe = shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        raise RuntimeError("Both 'ffmpeg' and 'ffprobe' must be available on PATH.")
+    candidate_handle, candidate_name = tempfile.mkstemp(
+        prefix=f".{final_path.stem}.", suffix=".partial.mp3", dir=output_dir
+    )
+    os.close(candidate_handle)
+    candidate = Path(candidate_name)
+    candidate.unlink()
     try:
         with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_spotisaver_") as temp:
             manifest: dict = {}
@@ -230,9 +239,42 @@ def download_episode_spotisaver(
                 episode_title=episode.title,
                 manifest_out=manifest,
             )
-            report_stage("Track mapping verified. Merging MP3...", "info")
-            merge_tracks(tracks, final_path, ffmpeg=ffmpeg, manifest=manifest)
-        report_stage(f"Done: {final_path}", "success")
+            report_stage("Track mapping verified. Merging audio...", "info")
+            merge_details: dict = {}
+            merge_tracks(
+                tracks, candidate, ffmpeg=ffmpeg, ffprobe=ffprobe,
+                manifest=manifest, diagnostics=merge_details,
+            )
+            method = merge_details.get("selected_method") or merge_details.get("method")
+            if method == "pcm_24bit_then_mp3_320k":
+                report_stage("Sample rate normalisation complete. Encoding MP3 at 320 kbit/s...", "info")
+            report_stage("Embedding cover artwork and metadata...", "info")
+            metadata = finalize_metadata(
+                candidate, episode, plan, tracks, Path(temp) / "artwork"
+            )
+            if metadata.get("artwork_embedded"):
+                report_stage("Cover artwork embedded. Verifying metadata...", "info")
+            else:
+                report_stage("No source cover artwork found. Verifying metadata...", "warning")
+            if not metadata.get("verified"):
+                raise RuntimeError("Final MP3 metadata verification failed.")
+            probe = subprocess.run(
+                [ffprobe, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(candidate)],
+                capture_output=True, text=True, check=False,
+            )
+            if probe.returncode != 0 or not probe.stdout.strip():
+                raise RuntimeError(f"Final MP3 probe failed: {probe.stderr.strip()}")
+            decode = subprocess.run(
+                [ffmpeg, "-hide_banner", "-v", "error", "-xerror", "-i", str(candidate),
+                 "-map", "0:a:0", "-f", "null", "-"],
+                capture_output=True, text=True, check=False,
+            )
+            if decode.returncode != 0:
+                raise RuntimeError(f"Final MP3 full decode failed: {decode.stderr.strip()}")
+        os.replace(candidate, final_path)
+        report_stage(f"Metadata and artwork verified. Done: {final_path}", "success")
         return final_path
     finally:
+        candidate.unlink(missing_ok=True)
         finish_console_output()
