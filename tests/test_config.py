@@ -22,7 +22,9 @@ class ConfigurationTests(unittest.TestCase):
                 'default_provider = "spotisaver"\n'
                 'output_dir = "D:/Music/TKKG"\n'
                 'show_browser = true\n'
-                'mute_browser_audio = false\n',
+                'mute_browser_audio = false\n'
+                'queue_retry_interval_seconds = 40\n'
+                'queue_reload_after_retries = 7\n',
                 encoding="utf-8",
             )
             self.assertEqual(load_config(path), {
