@@ -536,6 +536,7 @@ def _download_click(
     cdp_available = False
     cdp_download_guid: str | None = None
     cdp_download_started = False
+    cdp_progress_seen = False
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -767,10 +768,12 @@ def _download_click(
                         _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
 
                 def on_download_progress(event: dict[str, Any]) -> None:
+                    nonlocal cdp_progress_seen
                     if not cdp_download_started or not cdp_download_guid:
                         return
                     if str(event.get("guid", "")) != cdp_download_guid:
                         return
+                    cdp_progress_seen = True
                     received = int(event.get("receivedBytes", 0) or 0)
                     total_value = event.get("totalBytes")
                     try:
@@ -838,7 +841,7 @@ def _download_click(
                 cdp.detach()
             except Exception:
                 pass
-    if cdp_available and cdp_download_guid is None:
+    if cdp_available and not cdp_progress_seen:
         report_stage("ZIP downloaded. Chromium did not expose transfer progress.", "muted")
     if not destination.is_file():
         raise RuntimeError(f"Browser download did not create the expected file: {destination}")
