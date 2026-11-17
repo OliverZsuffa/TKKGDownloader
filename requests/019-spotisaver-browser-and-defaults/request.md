@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation in progress
+Implementation complete. Pull request #26 is open for review.
 
 ## Objective
 
@@ -105,27 +105,27 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 
 ## Acceptance criteria
 
-- [ ] Interactive Spotisaver track progress uses one continuously updating line through phase transitions.
-- [ ] Shorter progress updates clear stale characters left by longer previous updates.
-- [ ] ETA formatting correctly handles seconds-only and minute-plus-second values, and malformed DOM values are safely ignored.
-- [ ] Tests cover progress line clearing, phase transitions, ETA parsing, and ETA formatting.
-- [ ] After the ZIP is ready, a distinct transfer progress display reports actual received and total bytes when Chromium exposes them.
-- [ ] Transfer progress remains indeterminate when total size is unavailable and never fabricates a percentage.
-- [ ] If CDP progress events are unavailable, the existing download event workflow still completes correctly.
-- [ ] Spotisaver launches headless by default.
-- [ ] `--show-browser` launches visible Chromium.
-- [ ] Browser audio is muted by default.
-- [ ] `--unmute-browser` enables browser audio for that run.
-- [ ] User-level TOML settings are loaded correctly.
-- [ ] CLI arguments override configuration values.
-- [ ] Configuration values override built-in defaults.
-- [ ] Missing configuration is handled silently.
-- [ ] Invalid configuration produces a clear actionable error.
-- [ ] Existing CLI behaviour and episode validation remain compatible.
-- [ ] Unit tests cover configuration loading, precedence, validation, browser launch options, and progress output.
-- [ ] README documents the new browser options and configuration file.
-- [ ] Python compilation and the complete automated test suite pass.
-- [ ] The TKKGData contract smoke test and all existing CI checks pass.
+- [x] Interactive Spotisaver track progress uses one continuously updating line through phase transitions.
+- [x] Shorter progress updates clear stale characters left by longer previous updates.
+- [x] ETA formatting correctly handles seconds-only and minute-plus-second values, and malformed DOM values are safely ignored.
+- [x] Tests cover progress line clearing, phase transitions, ETA parsing, and ETA formatting.
+- [x] After the ZIP is ready, a distinct transfer progress display reports actual received and total bytes when Chromium exposes them.
+- [x] Transfer progress remains indeterminate when total size is unavailable and never fabricates a percentage.
+- [x] If CDP progress events are unavailable, the existing download event workflow still completes correctly.
+- [x] Spotisaver launches headless by default.
+- [x] `--show-browser` launches visible Chromium.
+- [x] Browser audio is muted by default.
+- [x] `--unmute-browser` enables browser audio for that run.
+- [x] User-level TOML settings are loaded correctly.
+- [x] CLI arguments override configuration values.
+- [x] Configuration values override built-in defaults.
+- [x] Missing configuration is handled silently.
+- [x] Invalid configuration produces a clear actionable error.
+- [x] Existing CLI behaviour and episode validation remain compatible.
+- [x] Unit tests cover configuration loading, precedence, validation, browser launch options, and progress output.
+- [x] README documents the new browser options and configuration file.
+- [x] Python compilation and the complete automated test suite pass.
+- [x] The TKKGData contract smoke test and all existing CI checks pass.
 
 ## Decisions
 
