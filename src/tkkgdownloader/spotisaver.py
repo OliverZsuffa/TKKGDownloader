@@ -752,10 +752,22 @@ def _download_click(
             _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
             try:
                 cdp = page.context.browser.new_browser_cdp_session()
+                target_infos = cdp.send("Target.getTargets").get("targetInfos", [])
+                page_target = next(
+                    (
+                        info for info in target_infos
+                        if info.get("type") == "page" and info.get("url") == page.url
+                    ),
+                    None,
+                )
+                browser_context_id = page_target.get("browserContextId") if page_target else None
+                if not browser_context_id:
+                    raise RuntimeError("Could not identify the Chromium browser context for the Spotisaver page.")
                 cdp.send("Browser.setDownloadBehavior", {
                     "behavior": "allow",
                     "downloadPath": str(target.resolve()),
                     "eventsEnabled": True,
+                    "browserContextId": browser_context_id,
                 })
                 cdp_available = True
 
