@@ -894,7 +894,14 @@ def _find_track_download(page: Any, title: str) -> Any | None:
     return None
 
 
-def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int = 120_000) -> list[Path]:
+def download_from_spotisaver(
+    plan: dict,
+    destination: Path,
+    *,
+    timeout_ms: int = 120_000,
+    show_browser: bool = False,
+    mute_browser_audio: bool = True,
+) -> list[Path]:
     """Download one album through the normal visible website interface."""
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -915,13 +922,20 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
     _log(f"Workflow started for {plan.get('spotify_album_title', 'unknown album')!r}.", workflow_started)
     _log(f"Destination directory: {destination}", workflow_started)
     report_stage("Opening browser...", "info")
-    _log(f"Launching visible Chromium for {url}", workflow_started)
+    visibility = "visible" if show_browser else "headless"
+    _log(
+        f"Launching {visibility} Chromium for {url}; browser audio muted={mute_browser_audio}.",
+        workflow_started,
+    )
 
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=False)
+            launch_options: dict[str, Any] = {"headless": not show_browser}
+            if mute_browser_audio:
+                launch_options["args"] = ["--mute-audio"]
+            browser = playwright.chromium.launch(**launch_options)
             report_stage("Browser opened.", "success")
-            _log("Visible Chromium launched successfully.", workflow_started)
+            _log(f"{visibility.capitalize()} Chromium launched successfully.", workflow_started)
             page = browser.new_page(accept_downloads=True)
             try:
                 stage = "page navigation"
@@ -1013,7 +1027,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                 _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files
             finally:
-                _log("Closing visible Chromium browser.", workflow_started)
+                _log("Closing Chromium browser.", workflow_started)
                 browser.close()
     except PlaywrightTimeoutError as exc:
         _log(
@@ -1052,6 +1066,8 @@ def download_and_import(
     episode_number: int | None = None,
     episode_title: str | None = None,
     manifest_out: dict | None = None,
+    show_browser: bool = False,
+    mute_browser_audio: bool = True,
 ) -> list[Path]:
     """Download, validate, and import an album while retaining per-run diagnostics."""
     global _ACTIVE_DIAGNOSTIC_LOGGER, _ACTIVE_PROGRESS_REPORTER
@@ -1071,7 +1087,12 @@ def download_and_import(
     try:
         downloads = work_dir / "spotisaver-downloads"
         downloads.mkdir(parents=True, exist_ok=True)
-        files = download_from_spotisaver(plan, downloads)
+        files = download_from_spotisaver(
+            plan,
+            downloads,
+            show_browser=show_browser,
+            mute_browser_audio=mute_browser_audio,
+        )
         if files and all(path.suffix.lower() == ".zip" for path in files):
             report_stage("Archive downloaded. Validating tracks...", "info")
         else:
