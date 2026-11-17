@@ -822,6 +822,7 @@ def _download_click(
                     if phase == "creating ZIP archive":
                         report_stage("Preparing archive...", "info")
                     elif phase == "ZIP archive ready":
+                        progress_reporter.update_task("Preparing archive", 100, 100)
                         report_stage("Archive ready. Downloading...", "success")
                     elif phase == "downloading playlist tracks":
                         report_stage("Downloading...", "info")
@@ -832,9 +833,7 @@ def _download_click(
                         archive_progress = _parse_track_progress(snapshot)
                         if archive_progress is not None:
                             progress_reporter.update_task("Preparing archive", archive_progress[2], 100)
-                    elif phase == "ZIP archive ready":
-                        progress_reporter.update_task("Preparing archive", 100, 100)
-                    else:
+                    elif phase != "ZIP archive ready":
                         progress_reporter.update(snapshot, started)
                 last_snapshot = snapshot
 
