@@ -751,7 +751,7 @@ def _download_click(
                 )
             _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
             try:
-                cdp = page.context.new_cdp_session(page)
+                cdp = page.context.browser.new_browser_cdp_session()
                 cdp.send("Browser.setDownloadBehavior", {
                     "behavior": "allow",
                     "downloadPath": str(target.resolve()),
