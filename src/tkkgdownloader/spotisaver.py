@@ -517,7 +517,8 @@ def _download_click(
     locator: Any,
     target: Path,
     *,
-    queue_retry_wait_ms: int = 30_000,
+    queue_retry_wait_ms: int = 25_000,
+    queue_reload_after_retries: int = 5,
     slot_confirmation_wait_ms: int = 5_000,
     retry_locator: Any | None = None,
 ) -> Path:
@@ -530,6 +531,8 @@ def _download_click(
     pending_started: float | None = None
     slot_acquired = False
     attempt = 1
+    consecutive_rejections = 0
+    expected_album_url = page.url
     zip_button_clicked = False
     last_phase = ""
     cdp = None
@@ -610,6 +613,35 @@ def _download_click(
                 queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
                 queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
                 if queue_busy and not download_events:
+                    if consecutive_rejections >= queue_reload_after_retries:
+                        _log(f"{consecutive_rejections} consecutive queue retries were rejected. Reloading the complete album page.", started)
+                        report_stage("Queue still busy. Reloading album page...", "warning")
+                        page.reload(wait_until="domcontentloaded", timeout=60_000)
+                        if page.is_closed():
+                            raise RuntimeError("Spotisaver page closed during the queue recovery reload.")
+                        if page.url.rstrip("/") != expected_album_url.rstrip("/"):
+                            raise RuntimeError(f"Spotisaver navigated to an unexpected URL during queue recovery: {page.url!r}.")
+                        page.locator("body").wait_for(state="visible", timeout=30_000)
+                        retry_button = _find_album_download(page)
+                        button_deadline = time.monotonic() + 120
+                        while retry_button is None and time.monotonic() < button_deadline:
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed while waiting for the album button after reload.")
+                            page.wait_for_timeout(1_000)
+                            retry_button = _find_album_download(page)
+                        if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
+                            _log_selector_state(page, "#downloadAllBtn")
+                            raise RuntimeError("Spotisaver album page reloaded, but the verified download button did not become available.")
+                        consecutive_rejections = 0
+                        attempt += 1
+                        _log(f"Album page reloaded successfully. Submitting attempt {attempt}.", started)
+                        retry_button.click()
+                        queue_started = None
+                        pending_started = None
+                        last_snapshot = None
+                        last_heartbeat = time.monotonic()
+                        continue
+
                     _log(
                         f"Queue rejection is still active after {queue_retry_wait_ms / 1000:.0f}s. "
                         "Closing the visible modal before retrying.",
@@ -664,8 +696,9 @@ def _download_click(
                             "did not become available."
                         )
 
+                    consecutive_rejections += 1
                     attempt += 1
-                    _log(f"Submitting Spotisaver download attempt {attempt}.", started)
+                    _log(f"Submitting Spotisaver download attempt {attempt}; {consecutive_rejections}/{queue_reload_after_retries} consecutive retries have been rejected.", started)
                     retry_button.click()
                     _log(
                         f"Attempt {attempt} click returned. Monitoring for another queue "
@@ -984,6 +1017,8 @@ def download_from_spotisaver(
     timeout_ms: int = 120_000,
     show_browser: bool = False,
     mute_browser_audio: bool = True,
+    queue_retry_interval_seconds: int = 25,
+    queue_reload_after_retries: int = 5,
 ) -> list[Path]:
     """Download one album through the normal visible website interface."""
     try:
@@ -1079,7 +1114,11 @@ def download_from_spotisaver(
                     label = album_download.inner_text(timeout=3_000).strip()
                     _log(f"Selected album download control: {label!r}.", workflow_started)
                     stage = "album download click and browser event"
-                    result = _download_click(page, album_download, destination)
+                    result = _download_click(
+                        page, album_download, destination,
+                        queue_retry_wait_ms=queue_retry_interval_seconds * 1000,
+                        queue_reload_after_retries=queue_reload_after_retries,
+                    )
                     _log(f"Album download workflow completed: {result.name}", workflow_started)
                     return [result]
 
@@ -1175,6 +1214,8 @@ def download_and_import(
             downloads,
             show_browser=show_browser,
             mute_browser_audio=mute_browser_audio,
+            queue_retry_interval_seconds=queue_retry_interval_seconds,
+            queue_reload_after_retries=queue_reload_after_retries,
         )
         if files and all(path.suffix.lower() == ".zip" for path in files):
             report_stage("Archive downloaded. Validating tracks...", "info")
