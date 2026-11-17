@@ -862,6 +862,22 @@ class SpotisaverConsoleTests(unittest.TestCase):
                         handler.close()
                         logger.removeHandler(handler)
 
+    def test_windows_diagnostic_logs_use_user_profile_not_localappdata(self):
+        with tempfile.TemporaryDirectory() as temp:
+            profile = Path(temp) / "profile"
+            with patch("tkkgdownloader.spotisaver.os.name", "nt"), \
+                 patch("tkkgdownloader.spotisaver.Path.home", return_value=profile), \
+                 patch.dict(os.environ, {"LOCALAPPDATA": str(Path(temp) / "store-package")}):
+                logger, path = _create_diagnostic_logger(144)
+            try:
+                self.assertEqual(path.parent, profile / "TKKGDownloader" / "logs")
+                self.assertTrue(path.is_file())
+                self.assertNotIn("store-package", str(path))
+            finally:
+                for handler in list(logger.handlers):
+                    handler.close()
+                    logger.removeHandler(handler)
+
     def test_progress_line_uses_track_count_and_eta(self):
         snapshot = {
             "status": "Downloaded 8 of 40 tracks",
