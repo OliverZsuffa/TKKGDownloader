@@ -77,6 +77,10 @@ def _run_with_progress(
             elif key == "progress" and value == "end":
                 progress_callback(label, 100, 100)
     stderr = process.stderr.read() if process.stderr is not None else ""
+    if process.stdout is not None:
+        process.stdout.close()
+    if process.stderr is not None:
+        process.stderr.close()
     return_code = process.wait()
     return {
         "command": progress_command,
