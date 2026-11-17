@@ -135,6 +135,7 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(_format_eta({"eta_minutes": "1", "eta_seconds": "32"}), "1m 32s")
         self.assertEqual(_format_eta({"eta_minutes": "0", "eta_seconds": "8"}), "8s")
         self.assertEqual(_format_eta({"eta_minutes": "", "eta_seconds": "42"}), "42s")
+        self.assertEqual(_format_eta({"eta_minutes": "2m", "eta_seconds": "05s"}), "2m 05s")
         self.assertEqual(_format_eta({"eta": "Estimated time: 42s"}), "42s")
         self.assertEqual(_format_eta({"eta": "Estimated time: 1m 05s"}), "1m 05s")
         self.assertIsNone(_format_eta({"eta_minutes": "1", "eta_seconds": "75"}))
@@ -175,6 +176,32 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.finish_queue_wait()
         self.assertEqual(output.getvalue().count("\r"), 1)
         self.assertEqual(output.getvalue().count("\n"), 1)
+
+    def test_transfer_progress_formats_known_and_unknown_totals(self):
+        reporter = _ProgressReporter()
+        reporter.interactive = False
+        reporter.last_report = 0
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            reporter.update_transfer(12_400_000, 25_800_000)
+            reporter.last_report = 0
+            reporter.update_transfer(12_400_000, None)
+        lines = output.getvalue().splitlines()
+        self.assertIn("48%", lines[0])
+        self.assertIn("11.8 MB / 24.6 MB", lines[0])
+        self.assertIn("11.8 MB received", lines[1])
+        self.assertNotIn("%", lines[1])
+
+    def test_interactive_progress_clears_longer_previous_line(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+        reporter = _ProgressReporter()
+        output = TTY()
+        with contextlib.redirect_stdout(output):
+            reporter.update({"status": "Downloaded 40 of 40 tracks", "progress": "100%"}, 0)
+            reporter.update({"status": "Downloaded 1 of 40 tracks", "progress": "3%"}, 0)
+        self.assertGreaterEqual(output.getvalue().count("\r"), 2)
 
     def test_finds_unique_visible_enabled_zip_button(self):
         button = FakeButton("Download ZIP")
