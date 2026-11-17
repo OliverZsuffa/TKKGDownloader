@@ -14,7 +14,7 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
-- [019: Spotisaver browser experience and downloader defaults](019-spotisaver-browser-and-defaults/request.md) — fix the duplicate progress display, run Chromium headlessly and muted by default, and add user-level configurable defaults.
+- [019: Spotisaver browser experience and downloader defaults](019-spotisaver-browser-and-defaults/request.md) — fix progress output, show actual ZIP transfer progress when Chromium exposes it, run Chromium headlessly and muted by default, and add optional user-level TOML settings.
 
 - [018: Validate Spotisaver download slot acquisition](018-spotisaver-slot-state-validation/request.md) — distinguish an explicit queue rejection, an unconfirmed state, and positive evidence that processing has started.
 
