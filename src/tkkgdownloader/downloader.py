@@ -170,6 +170,8 @@ def download_episode_spotisaver(
     diagnostic_dir: Path | None = None,
     show_browser: bool = False,
     mute_browser_audio: bool = True,
+    queue_retry_interval_seconds: int = 25,
+    queue_reload_after_retries: int = 5,
 ) -> Path:
     """Download one episode through Spotisaver, optionally retaining a full diagnostic workspace."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -204,6 +206,8 @@ def download_episode_spotisaver(
                 manifest_out=manifest,
                 show_browser=show_browser,
                 mute_browser_audio=mute_browser_audio,
+                queue_retry_interval_seconds=queue_retry_interval_seconds,
+                queue_reload_after_retries=queue_reload_after_retries,
             )
             report_stage("Source tracks and ordering validated. Starting quality diagnostics...", "info")
             from .audio_diagnostics import run_episode_diagnostics
