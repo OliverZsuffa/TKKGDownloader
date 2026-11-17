@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from unittest.mock import patch
 
+import tkkgdownloader.spotisaver as spotisaver_module
+
 from tkkgdownloader.spotisaver import (
     _find_zip_download_button,
     _format_eta,
@@ -218,6 +220,124 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.update({"status": "Downloaded 40 of 40 tracks", "progress": "100%"}, 0)
             reporter.update({"status": "Downloaded 1 of 40 tracks", "progress": "3%"}, 0)
         self.assertGreaterEqual(output.getvalue().count("\r"), 2)
+
+    def test_cdp_progress_tracks_only_the_zip_download_guid(self):
+        class Reporter:
+            def __init__(self):
+                self.queue_wait_started = None
+                self.transfer_updates = []
+            def stage(self, message, tone="info"):
+                pass
+            def start_queue_wait(self):
+                self.queue_wait_started = 0
+            def update_queue_wait(self):
+                pass
+            def finish_queue_wait(self):
+                self.queue_wait_started = None
+                return 0
+            def update(self, snapshot, started):
+                pass
+            def finish(self):
+                pass
+            def update_transfer(self, received, total):
+                self.transfer_updates.append((received, total))
+
+        class CDP:
+            def __init__(self, page):
+                self.page = page
+                self.handlers = {}
+                self.commands = []
+                self.detached = False
+            def send(self, method, params=None):
+                self.commands.append((method, params))
+                if method == "Target.getTargets":
+                    return {"targetInfos": [{
+                        "type": "page",
+                        "url": self.page.url,
+                        "browserContextId": "spotisaver-context",
+                    }]}
+                return {}
+            def on(self, event, callback):
+                self.handlers[event] = callback
+            def emit(self, event, payload):
+                self.handlers[event](payload)
+            def detach(self):
+                self.detached = True
+
+        class Download:
+            suggested_filename = "album.zip"
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class Page(FakePage):
+            def __init__(self, snapshot, zip_button):
+                super().__init__(snapshot, zip_button)
+                self.url = "https://spotisaver.net/en/album/example/"
+                self.cdp = CDP(self)
+                self.context = type("Context", (), {})()
+                self.context.browser = type(
+                    "Browser", (), {"new_browser_cdp_session": lambda browser: self.cdp}
+                )()
+            def wait_for_timeout(self, timeout):
+                if self.zip_button.clicked and not getattr(self, "download_sent", False):
+                    self.download_sent = True
+                    self.events["download"](Download())
+
+        reporter = Reporter()
+        zip_button = FakeButton("Download ZIP")
+        def emit_download_events():
+            page.cdp.emit("Browser.downloadWillBegin", {
+                "guid": "zip-guid",
+                "url": "https://cdn.example/album.zip",
+                "suggestedFilename": "album.zip",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "unrelated-guid",
+                "receivedBytes": 1000,
+                "totalBytes": 1000,
+                "state": "completed",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "zip-guid",
+                "receivedBytes": 500,
+                "totalBytes": 1000,
+                "state": "inProgress",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "zip-guid",
+                "receivedBytes": 1000,
+                "totalBytes": 1000,
+                "state": "completed",
+            })
+        zip_button.on_click = emit_download_events
+        page = Page({
+            "status": "ZIP archive created.",
+            "log": "",
+            "failed": "",
+            "progress": "100 100%",
+            "eta": "",
+            "eta_template": "",
+            "eta_minutes": "",
+            "eta_seconds": "",
+            "controls": '[{"text":"Download ZIP"}]',
+        }, zip_button)
+        class AlbumButton:
+            def click(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(
+            spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", reporter
+        ):
+            result = _download_click(page, AlbumButton(), Path(temp))
+
+        self.assertEqual(result.name, "album.zip")
+        self.assertEqual(reporter.transfer_updates, [(500, 1000), (1000, 1000)])
+        behavior = next(
+            params for method, params in page.cdp.commands
+            if method == "Browser.setDownloadBehavior"
+        )
+        self.assertEqual(behavior["browserContextId"], "spotisaver-context")
+        self.assertTrue(page.cdp.detached)
 
     def test_finds_unique_visible_enabled_zip_button(self):
         button = FakeButton("Download ZIP")
