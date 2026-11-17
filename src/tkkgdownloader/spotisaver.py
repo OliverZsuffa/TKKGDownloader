@@ -18,6 +18,14 @@ from .audio_import import import_audio_files
 SPOTISAVER_ALBUM_URL = "https://spotisaver.net/en/album/{album_id}/"
 
 
+def _browser_launch_options(*, show_browser: bool = False, mute_browser_audio: bool = True) -> dict[str, Any]:
+    """Build explicit Chromium launch options for the Spotisaver workflow."""
+    options: dict[str, Any] = {"headless": not show_browser}
+    if mute_browser_audio:
+        options["args"] = ["--mute-audio"]
+    return options
+
+
 def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]+", "", value)
@@ -994,10 +1002,10 @@ def download_from_spotisaver(
 
     try:
         with sync_playwright() as playwright:
-            launch_options: dict[str, Any] = {"headless": not show_browser}
-            if mute_browser_audio:
-                launch_options["args"] = ["--mute-audio"]
-            browser = playwright.chromium.launch(**launch_options)
+            browser = playwright.chromium.launch(**_browser_launch_options(
+                show_browser=show_browser,
+                mute_browser_audio=mute_browser_audio,
+            ))
             report_stage("Browser opened.", "success")
             _log(f"{visibility.capitalize()} Chromium launched successfully.", workflow_started)
             page = browser.new_page(accept_downloads=True)
