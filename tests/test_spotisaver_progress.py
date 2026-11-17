@@ -188,14 +188,17 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(_format_duration(63), "1m 03s")
         self.assertEqual(_format_duration(3661), "1h 01m 01s")
 
-    def test_total_elapsed_time_is_reported_at_run_end(self):
+    def test_total_elapsed_time_is_reported_at_run_end_on_success_and_failure(self):
         output = io.StringIO()
         with patch.object(spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", None), \
              patch("tkkgdownloader.spotisaver.time.monotonic", return_value=163.0), \
              contextlib.redirect_stdout(output):
             start_run_timer(100.0)
             finish_run_timer(success=True)
+            start_run_timer(100.0)
+            finish_run_timer(success=False)
         self.assertIn("Completed. Total elapsed time: 1m 03s.", output.getvalue())
+        self.assertIn("Stopped. Total elapsed time: 1m 03s.", output.getvalue())
 
     def test_browser_launch_defaults_to_headless_and_muted(self):
         self.assertEqual(_browser_launch_options(), {
@@ -228,6 +231,11 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("100%", lines[0])
         self.assertIn("24.6 MB / 24.6 MB", lines[0])
+        unknown_output = io.StringIO()
+        with contextlib.redirect_stdout(unknown_output):
+            reporter.finish_transfer(1_200, None)
+        self.assertIn("ZIP transfer complete  1.2 KB received", unknown_output.getvalue())
+        self.assertNotIn("%", unknown_output.getvalue())
 
     def test_interactive_progress_clears_longer_previous_line(self):
         class TTY(io.StringIO):
