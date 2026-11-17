@@ -19,6 +19,8 @@ from tkkgdownloader.spotisaver import (
     _ProgressReporter,
     _browser_launch_options,
     _format_duration,
+    start_run_timer,
+    finish_run_timer,
 )
 
 
@@ -185,6 +187,15 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(_format_duration(0), "0s")
         self.assertEqual(_format_duration(63), "1m 03s")
         self.assertEqual(_format_duration(3661), "1h 01m 01s")
+
+    def test_total_elapsed_time_is_reported_at_run_end(self):
+        output = io.StringIO()
+        with patch.object(spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", None), \
+             patch("tkkgdownloader.spotisaver.time.monotonic", return_value=163.0), \
+             contextlib.redirect_stdout(output):
+            start_run_timer(100.0)
+            finish_run_timer(success=True)
+        self.assertIn("Completed. Total elapsed time: 1m 03s.", output.getvalue())
 
     def test_browser_launch_defaults_to_headless_and_muted(self):
         self.assertEqual(_browser_launch_options(), {
