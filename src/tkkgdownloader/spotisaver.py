@@ -834,6 +834,8 @@ def _download_click(
                 cdp.detach()
             except Exception:
                 pass
+    if cdp_available and cdp_download_guid is None:
+        report_stage("ZIP downloaded. Chromium did not expose transfer progress.", "muted")
     if not destination.is_file():
         raise RuntimeError(f"Browser download did not create the expected file: {destination}")
     size = destination.stat().st_size
