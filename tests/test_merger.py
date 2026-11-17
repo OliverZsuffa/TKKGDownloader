@@ -97,7 +97,7 @@ class SafeMergeIntegrationTests(unittest.TestCase):
             output = root / "merged.mp3"
             details: dict = {}
 
-            def write_wrong_stream_copy(tracks, concat_file, temporary_output, ffmpeg):
+            def write_wrong_stream_copy(tracks, concat_file, temporary_output, ffmpeg, **kwargs):
                 shutil.copyfile(wrong, temporary_output)
                 return {"command": ["synthetic"], "returncode": 0, "stdout": "", "stderr": ""}
 
