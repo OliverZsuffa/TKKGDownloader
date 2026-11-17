@@ -10,7 +10,7 @@ import stat
 import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 from mutagen.id3 import ID3
 
@@ -55,7 +55,11 @@ def _read_embedded_metadata(path: Path) -> tuple[dict[str, str | None], str, lis
     return values, "read", []
 
 
-def _safe_extract(archive: Path, destination: Path) -> list[Path]:
+def _safe_extract(
+    archive: Path,
+    destination: Path,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+) -> list[Path]:
     extracted: list[Path] = []
     root = destination.resolve()
     try:
@@ -63,7 +67,7 @@ def _safe_extract(archive: Path, destination: Path) -> list[Path]:
             members = zipped.infolist()
             if not members:
                 raise RuntimeError("Spotisaver ZIP archive is empty.")
-            for member in members:
+            for index, member in enumerate(members, start=1):
                 name = member.filename.replace("\\", "/")
                 path = PurePosixPath(name)
                 if path.is_absolute() or ".." in path.parts or not path.parts:
@@ -76,25 +80,29 @@ def _safe_extract(archive: Path, destination: Path) -> list[Path]:
                     raise RuntimeError(f"Unsafe path in Spotisaver ZIP: {member.filename!r}")
                 if member.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
-                    continue
-                if target.suffix.lower() != ".mp3":
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zipped.open(member) as source, target.open("xb") as output:
-                    shutil.copyfileobj(source, output)
-                extracted.append(target)
+                elif target.suffix.lower() == ".mp3":
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zipped.open(member) as source, target.open("xb") as output:
+                        shutil.copyfileobj(source, output)
+                    extracted.append(target)
+                if progress_callback is not None:
+                    progress_callback("Extracting archive", index, len(members))
     except zipfile.BadZipFile as exc:
         raise RuntimeError("Spotisaver returned a corrupt ZIP archive.") from exc
     return extracted
 
 
-def _collect_mp3s(files: list[Path], destination: Path) -> list[Path]:
+def _collect_mp3s(
+    files: list[Path],
+    destination: Path,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+) -> list[Path]:
     collected: list[Path] = []
     for file in files:
         if not file.is_file():
             raise RuntimeError(f"Spotisaver download is missing: {file}")
         if file.suffix.lower() == ".zip":
-            collected.extend(_safe_extract(file, destination))
+            collected.extend(_safe_extract(file, destination, progress_callback))
         elif file.suffix.lower() == ".mp3":
             copied = destination / file.name
             if copied.exists():
@@ -198,13 +206,14 @@ def import_audio_files(
     episode_number: int | None = None,
     episode_title: str | None = None,
     album_title: str | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> list[Path]:
     """Import tracks only after an exact, one-to-one filename mapping is established."""
     expected = _validate_expected_tracks(expected_tracks)
     destination.mkdir(parents=True, exist_ok=True)
     raw_dir = destination / "raw"
     raw_dir.mkdir()
-    mp3s = _collect_mp3s(files, raw_dir)
+    mp3s = _collect_mp3s(files, raw_dir, progress_callback)
     expected_count = len(expected)
     if len(mp3s) != expected_count:
         raise RuntimeError(
@@ -213,8 +222,12 @@ def import_audio_files(
         )
 
     mappings: list[tuple[dict[str, Any], Path, str, dict[str, Any]]] = []
-    metadata_cache = {source: _read_embedded_metadata(source) for source in mp3s}
-    for track in expected:
+    metadata_cache: dict[Path, tuple[dict[str, str | None], str, list[str]]] = {}
+    for index, source in enumerate(mp3s, start=1):
+        metadata_cache[source] = _read_embedded_metadata(source)
+        if progress_callback is not None:
+            progress_callback("Reading track metadata", index, len(mp3s))
+    for track_index, track in enumerate(expected, start=1):
         number = track["track_number"]
         title_keys = _track_title_keys(track)
         matches: list[tuple[Path, str, dict[str, Any]]] = []
@@ -263,13 +276,15 @@ def import_audio_files(
         if source.stat().st_size == 0:
             raise RuntimeError(f"Downloaded track {number} is empty.")
         mappings.append((track, source, rule, evidence))
+        if progress_callback is not None:
+            progress_callback("Matching tracks", track_index, expected_count)
 
     assigned = [source for _, source, _, _ in mappings]
     if len(set(assigned)) != len(mp3s) or set(assigned) != set(mp3s):
         raise RuntimeError("Spotisaver source files do not map one-to-one to the canonical tracklist.")
 
     source_hashes: dict[str, str] = {}
-    for track, source, _, _ in mappings:
+    for index, (track, source, _, _) in enumerate(mappings, start=1):
         digest = _sha256(source)
         if digest in source_hashes:
             raise RuntimeError(
@@ -277,6 +292,8 @@ def import_audio_files(
                 "No merge was made because duplicate audio requires explicit review."
             )
         source_hashes[digest] = str(track["track_number"])
+        if progress_callback is not None:
+            progress_callback("Checking source integrity", index, expected_count)
 
     validated: list[Path] = []
     entries: list[dict[str, Any]] = []
@@ -323,6 +340,8 @@ def import_audio_files(
             "warnings": entry_warnings,
         })
         validated.append(target)
+        if progress_callback is not None:
+            progress_callback("Copying verified tracks", len(validated), expected_count)
 
     manifest = {
         "schema_version": 1,
