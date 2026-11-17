@@ -62,6 +62,7 @@ def _run_with_progress(
         errors="replace",
     )
     stdout_lines: list[str] = []
+    progress_finished = False
     if process.stdout is not None:
         for line in process.stdout:
             stdout_lines.append(line)
@@ -76,12 +77,15 @@ def _run_with_progress(
                 progress_callback(label, min(99, max(0, round(seconds * 100 / total_duration))), 100)
             elif key == "progress" and value == "end":
                 progress_callback(label, 100, 100)
+                progress_finished = True
     stderr = process.stderr.read() if process.stderr is not None else ""
     if process.stdout is not None:
         process.stdout.close()
     if process.stderr is not None:
         process.stderr.close()
     return_code = process.wait()
+    if return_code == 0 and not progress_finished:
+        progress_callback(label, 100, 100)
     return {
         "command": progress_command,
         "returncode": return_code,
