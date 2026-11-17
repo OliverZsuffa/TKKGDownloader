@@ -15,6 +15,7 @@ from tkkgdownloader.spotisaver import (
     _render_progress_bar,
     _download_click,
     _ProgressReporter,
+    _browser_launch_options,
 )
 
 
@@ -176,6 +177,21 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.finish_queue_wait()
         self.assertEqual(output.getvalue().count("\r"), 1)
         self.assertEqual(output.getvalue().count("\n"), 1)
+
+    def test_browser_launch_defaults_to_headless_and_muted(self):
+        self.assertEqual(_browser_launch_options(), {
+            "headless": True,
+            "args": ["--mute-audio"],
+        })
+
+    def test_browser_launch_overrides_are_independent(self):
+        self.assertEqual(_browser_launch_options(show_browser=True), {
+            "headless": False,
+            "args": ["--mute-audio"],
+        })
+        self.assertEqual(_browser_launch_options(mute_browser_audio=False), {
+            "headless": True,
+        })
 
     def test_transfer_progress_formats_known_and_unknown_totals(self):
         reporter = _ProgressReporter()
