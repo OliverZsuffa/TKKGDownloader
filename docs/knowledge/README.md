@@ -10,4 +10,3 @@ Request-specific planning, open questions, and test notes belong in their number
 - [Technical decisions](technical-decisions.md)
 - [TKKGData integration](tkkgdata-integration.md)
 - [Spotisaver runtime configuration](spotisaver-runtime.md)
-- [Spotisaver runtime configuration](spotisaver-runtime.md)
