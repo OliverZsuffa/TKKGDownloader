@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .config import ConfigurationError, load_config
 from .downloader import download_episode, download_episode_spotisaver
 from .episodes import fetch_catalog, get_episode
 
@@ -35,14 +36,17 @@ def build_parser() -> argparse.ArgumentParser:
         description="Download a TKKG episode as one MP3 file.",
     )
     parser.add_argument("episodes", type=parse_episode_spec, help="Episode number or inclusive range, e.g. 1 or 1-10")
-    parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Output directory (default: ./output)")
+    parser.add_argument("--output-dir", type=Path, default=None, help="Output directory (default: ./output)")
     parser.add_argument("--overwrite", action="store_true", help="Replace existing output files.")
     parser.add_argument(
         "--provider",
         choices=("yt-dlp", "spotisaver"),
-        default="yt-dlp",
+        default=None,
         help="Audio provider (default: yt-dlp). Spotisaver processes exactly one episode per run.",
     )
+    parser.add_argument("--config", type=Path, help="Use an alternative TOML configuration file.")
+    parser.add_argument("--show-browser", action="store_true", default=None, help="Show the Spotisaver Chromium window for this run.")
+    parser.add_argument("--unmute-browser", action="store_true", default=None, help="Allow audio from the Spotisaver browser for this run.")
     parser.add_argument(
         "--diagnostic-dir",
         type=Path,
@@ -53,13 +57,24 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.diagnostic_dir is not None and args.provider != "spotisaver":
+    try:
+        config = load_config(args.config)
+    except ConfigurationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    provider = args.provider or config.get("default_provider", "yt-dlp")
+    output_dir = args.output_dir or Path(config.get("output_dir", "output"))
+    show_browser = args.show_browser if args.show_browser is not None else config.get("show_browser", False)
+    mute_browser_audio = not args.unmute_browser if args.unmute_browser is not None else config.get("mute_browser_audio", True)
+
+    if args.diagnostic_dir is not None and provider != "spotisaver":
         print("ERROR: --diagnostic-dir requires --provider spotisaver.", file=sys.stderr)
         return 2
     if args.diagnostic_dir is not None and len(args.episodes) != 1:
         print("ERROR: Diagnostic mode accepts exactly one episode per run.", file=sys.stderr)
         return 2
-    if args.provider == "spotisaver" and len(args.episodes) != 1:
+    if provider == "spotisaver" and len(args.episodes) != 1:
         print(
             "ERROR: Spotisaver mode accepts exactly one episode per run. "
             "Run it again for each additional episode.",
@@ -78,12 +93,20 @@ def main() -> int:
         try:
             episode = get_episode(catalog, number)
             print(f"\n=== TKKG {episode.number:03d}: {episode.title} ===")
-            downloader = download_episode_spotisaver if args.provider == "spotisaver" else download_episode
+            downloader = download_episode_spotisaver if provider == "spotisaver" else download_episode
             result = downloader(
                 episode,
-                args.output_dir,
+                output_dir,
                 overwrite=args.overwrite,
-                **({"diagnostic_dir": args.diagnostic_dir} if args.provider == "spotisaver" else {}),
+                **(
+                    {
+                        "diagnostic_dir": args.diagnostic_dir,
+                        "show_browser": show_browser,
+                        "mute_browser_audio": mute_browser_audio,
+                    }
+                    if provider == "spotisaver"
+                    else {}
+                ),
             )
             if result is not None:
                 completed += 1
