@@ -44,7 +44,14 @@ class SpotisaverImportTests(unittest.TestCase):
                 zipped.writestr("Album/TKKG 150 Teil 02.mp3", b"second")
                 zipped.writestr("Album/TKKG 150 Teil 01.mp3", b"first")
                 zipped.writestr("Album/cover.jpg", b"image")
-            result = import_audio_files([archive], tracks(), root / "work")
+            progress = []
+            result = import_audio_files(
+                [archive], tracks(), root / "work",
+                progress_callback=lambda label, current, total: progress.append((label, current, total)),
+            )
+            self.assertTrue(any(label == "Extracting archive" for label, _, _ in progress))
+            self.assertTrue(any(label == "Matching tracks" and current == total for label, current, total in progress))
+            self.assertTrue(any(label == "Copying verified tracks" and current == total for label, current, total in progress))
             self.assertEqual([path.name for path in result], [
                 "01 - TKKG 150 Teil 01.mp3",
                 "02 - TKKG 150 Teil 02.mp3",
