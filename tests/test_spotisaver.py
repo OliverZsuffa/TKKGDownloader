@@ -19,6 +19,7 @@ from tkkgdownloader.spotisaver import (
     _render_progress_bar,
     _create_diagnostic_logger,
     _download_failure,
+    _download_state,
     _queue_retry_seconds,
     _find_album_download,
     _find_playlist_navigation,
@@ -244,10 +245,10 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
                 self.closed = False
                 self.waited = 0
                 self.snapshot = {
-                    "status": "Downloading playlist...",
+                    "status": "Downloaded 1 of 40 tracks",
                     "log": "",
                     "failed": "",
-                    "progress": "0 100%",
+                    "progress": "1 100%",
                     "controls": "[]",
                 }
 
@@ -353,6 +354,111 @@ class SpotisaverDiagnosticsTests(unittest.TestCase):
             self.assertNotIn("rejected attempt", output.getvalue())
             self.assertNotIn("Website retry instruction", output.getvalue())
             self.assertNotIn("queue notice cleared", output.getvalue())
+
+    def test_download_state_requires_positive_processing_evidence(self):
+        self.assertEqual(
+            _download_state({
+                "status": "Downloading playlist...",
+                "log": "",
+                "failed": "",
+                "progress": "0 100%",
+            }),
+            "unconfirmed",
+        )
+        self.assertEqual(
+            _download_state({
+                "status": "Downloaded 1 of 40 tracks",
+                "log": "",
+                "failed": "",
+                "progress": "1 100%",
+            }),
+            "accepted",
+        )
+        self.assertEqual(
+            _download_state({"status": "Creating ZIP archive...", "log": "", "failed": ""}),
+            "accepted",
+        )
+        self.assertEqual(
+            _download_state({
+                "status": "Downloading playlist...",
+                "log": "Sorry, all download slots are busy right now.",
+                "failed": "",
+                "progress": "0 100%",
+            }),
+            "rejected",
+        )
+        self.assertEqual(
+            _download_state({"status": "Download failed", "log": "", "failed": ""}),
+            "failed",
+        )
+
+    def test_cleared_queue_notice_without_progress_does_not_claim_slot(self):
+        class FakeDownload:
+            suggested_filename = "album.zip"
+
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class Page:
+            def __init__(self):
+                self.events = {}
+                self.waits = 0
+
+            def on(self, event, callback):
+                self.events[event] = callback
+
+            def evaluate(self, script):
+                if self.waits == 0:
+                    return {
+                        "status": "Downloading playlist...",
+                        "log": "Sorry, all download slots are busy right now. Please try again in 25 sec.",
+                        "failed": "",
+                        "progress": "0 100%",
+                        "controls": "[]",
+                    }
+                return {
+                    "status": "Downloading playlist...",
+                    "log": "",
+                    "failed": "",
+                    "progress": "0 100%",
+                    "controls": "[]",
+                }
+
+            def is_closed(self):
+                return False
+
+            def wait_for_timeout(self, timeout):
+                self.waits += 1
+                if self.waits == 2:
+                    self.events["download"](FakeDownload())
+
+        class Button:
+            def __init__(self):
+                self.clicks = 0
+
+            def click(self):
+                self.clicks += 1
+
+        page = Page()
+        button = Button()
+        with tempfile.TemporaryDirectory() as temp:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _download_click(page, button, Path(temp))
+        self.assertEqual(button.clicks, 1)
+        self.assertEqual(result.name, "album.zip")
+        self.assertNotIn("Download slot acquired.", output.getvalue())
+
+    def test_explicit_processing_status_confirms_slot(self):
+        self.assertEqual(
+            _download_state({
+                "status": "Processing playlist...",
+                "log": "",
+                "failed": "",
+                "progress": "0 100%",
+            }),
+            "accepted",
+        )
 
     def test_queue_retry_delay_parser(self):
         snapshot = {
