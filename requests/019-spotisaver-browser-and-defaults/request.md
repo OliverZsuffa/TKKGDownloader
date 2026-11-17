@@ -32,11 +32,23 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 ### 1. Progress display
 
 - Fix the transition into the Spotisaver track-download phase so the progress bar remains a single in-place line in interactive terminals.
-- Print the `Downloading...` stage before the first progress bar update, or otherwise ensure that the stage transition does not finalise an already active progress line.
-- Preserve the existing concise output, colour handling, queue-wait display, non-interactive reporting, and final newline behaviour.
-- Do not change download detection, queue handling, retry behaviour, or progress calculations.
+- Clear leftover characters from the previous terminal line whenever a shorter progress update replaces a longer one. This must prevent fragments such as `90%40 tracks 98%`.
+- Print phase messages before the first progress update for that phase, or otherwise ensure that stage transitions do not finalise an active progress line unexpectedly.
+- Correct ETA parsing and formatting so seconds-only estimates appear as `ETA 40s`, while estimates containing minutes appear as `ETA 2m 05s`. Never append duplicated unit suffixes.
+- Inspect the actual Spotisaver DOM values for ETA components. Parse numeric values robustly and treat missing, malformed, or out-of-range values as unavailable rather than displaying corrupted text.
+- Preserve concise output, colour handling, queue-wait display, non-interactive reporting, and final newline behaviour.
+- Do not change download detection, queue handling, retry behaviour, or track progress calculations.
 
-### 2. Browser visibility
+### 2. ZIP file transfer progress
+
+- Add a separate progress display for the actual ZIP transfer from Spotisaver to the local computer, after the website reports that the archive is ready and the normal Download ZIP control is clicked.
+- Use Chromium's supported DevTools download progress events through Playwright's CDP session, correlating the download event with the browser download already being awaited by the existing workflow.
+- Display received bytes, total bytes, and percentage when Chromium supplies a valid non-zero total. Keep the display indeterminate when the total size is not yet known.
+- Keep the website's track-processing progress and the browser's ZIP-transfer progress as distinct phases. Do not combine their percentages.
+- If progress events are unavailable or unsupported, retain the existing wait-for-download-event behaviour and report that transfer progress is unavailable. Never invent or estimate a percentage from elapsed time.
+- Continue saving and validating the archive through the existing Playwright download flow. The new progress display must not change download handling or validation.
+
+### 3. Browser visibility
 
 - Launch Spotisaver Chromium in headless mode by default.
 - Add `--show-browser` to launch a normal visible browser window for a run.
@@ -44,14 +56,14 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 - Ensure browser closure and exception cleanup work in both modes.
 - Continue using normal Playwright page interactions and browser download events. Do not add stealth settings or bypass site restrictions.
 
-### 3. Browser audio
+### 4. Browser audio
 
 - Mute Chromium audio by default so website sounds do not play during unattended background operation.
 - Provide an explicit `--unmute-browser` override for the uncommon case where audible page output is useful.
 - Apply the setting at browser launch and verify the correct Playwright launch option is used.
 - Do not change operating-system audio settings or mute other applications.
 
-### 4. User-level configuration
+### 5. User-level configuration
 
 - Add a user-level TOML configuration file, separate from the repository and downloaded audio.
 - On Windows, use `%APPDATA%\\TKKGDownloader\\config.toml`. Provide a documented platform-appropriate fallback for other operating systems.
@@ -68,7 +80,7 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 - Do not store credentials, cookies, or browser session data in the configuration file.
 - Document the file location, supported keys, example contents, and precedence in the README.
 
-### 5. CLI behaviour and compatibility
+### 6. CLI behaviour and compatibility
 
 - Preserve existing explicit flags such as `--provider`, `--output-dir`, `--overwrite`, and `--diagnostic-dir`.
 - Make parser defaults distinguish between an omitted option and an explicitly supplied option, so configuration values are not accidentally overwritten by argparse defaults.
@@ -93,8 +105,13 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 
 ## Acceptance criteria
 
-- [ ] Interactive Spotisaver progress uses one continuously updating progress line through the transition into track downloading.
-- [ ] Progress output tests cover the stage transition and confirm that the old progress line is not left behind.
+- [ ] Interactive Spotisaver track progress uses one continuously updating line through phase transitions.
+- [ ] Shorter progress updates clear stale characters left by longer previous updates.
+- [ ] ETA formatting correctly handles seconds-only and minute-plus-second values, and malformed DOM values are safely ignored.
+- [ ] Tests cover progress line clearing, phase transitions, ETA parsing, and ETA formatting.
+- [ ] After the ZIP is ready, a distinct transfer progress display reports actual received and total bytes when Chromium exposes them.
+- [ ] Transfer progress remains indeterminate when total size is unavailable and never fabricates a percentage.
+- [ ] If CDP progress events are unavailable, the existing download event workflow still completes correctly.
 - [ ] Spotisaver launches headless by default.
 - [ ] `--show-browser` launches visible Chromium.
 - [ ] Browser audio is muted by default.
