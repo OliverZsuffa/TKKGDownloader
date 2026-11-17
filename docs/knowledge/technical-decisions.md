@@ -114,3 +114,14 @@ Normal Spotisaver downloads and diagnostic candidates share one metadata impleme
 ## 015. Distinguish Spotisaver queue rejection from confirmed processing
 
 A queue rejection disappearing is not evidence that Spotisaver accepted the request. Treat the visible modal as a state machine: explicit all-slots-busy text is rejected; the absence of that text without a positive processing signal is unconfirmed; an explicit slot-acquired or processing status, non-zero track progress, or ZIP creation is accepted. The initial "Downloading playlist..." status is provisional for five seconds, allowing a delayed all-slots-busy notice to take precedence. If the status remains visible without rejection for the full confirmation window, it counts as accepted. A zero-percent progress bar alone is not sufficient; an explicit failure remains failed. Report "Download slot acquired" only on the first transition into the accepted state. If the rejection notice clears into an unconfirmed state, stop the retry timer but continue monitoring without another click and without a success message. Preserve the existing retry policy only while the explicit rejection remains visible. A browser download event confirms a browser transfer, not retroactive slot acquisition. Archive and track validation remain separate mandatory checks.
+
+
+## 016. Report truthful end-to-end Spotisaver processing progress
+
+Use one progress display for the final ZIP transfer. Interactive terminals update that line in place. Redirected output must not print a separate line for every CDP event; emit the final transfer state once. When CDP reports the correlated download complete, use the file Chromium wrote to its configured download directory and wait for a non-empty stable file. Use Playwright save_as only when CDP download events are unavailable.
+
+Treat website archive preparation as its own phase. While the website reports archive creation progress, display that reported value. Once it explicitly reports that the archive was created, complete the preparation stage at 100%. Never leave a completed stage at 90%.
+
+After download, show measurable progress for archive extraction, embedded metadata reading, canonical track matching, source integrity checks, and verified track copying. Use item counts for those stages. For FFmpeg operations, use FFmpeg's machine-readable progress output and probed source duration to report actual progress during stream-copy merging, PCM conversion, PCM concatenation, and MP3 encoding. Do not invent percentages for operations that expose no reliable progress.
+
+Measure the full Spotisaver episode operation with time.monotonic(). Include elapsed time with active progress and report the final total on both success and failure. Keep status output compact and make progress updates replace only their own active line.
