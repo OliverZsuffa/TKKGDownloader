@@ -168,6 +168,8 @@ def download_episode_spotisaver(
     *,
     overwrite: bool = False,
     diagnostic_dir: Path | None = None,
+    show_browser: bool = False,
+    mute_browser_audio: bool = True,
 ) -> Path:
     """Download one episode through Spotisaver, optionally retaining a full diagnostic workspace."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -200,6 +202,8 @@ def download_episode_spotisaver(
                 episode_number=episode.number,
                 episode_title=episode.title,
                 manifest_out=manifest,
+                show_browser=show_browser,
+                mute_browser_audio=mute_browser_audio,
             )
             report_stage("Source tracks and ordering validated. Starting quality diagnostics...", "info")
             from .audio_diagnostics import run_episode_diagnostics
@@ -238,6 +242,8 @@ def download_episode_spotisaver(
                 episode_number=episode.number,
                 episode_title=episode.title,
                 manifest_out=manifest,
+                show_browser=show_browser,
+                mute_browser_audio=mute_browser_audio,
             )
             report_stage("Track mapping verified. Merging audio...", "info")
             merge_details: dict = {}
