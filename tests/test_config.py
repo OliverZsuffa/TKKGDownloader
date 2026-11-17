@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -97,12 +97,12 @@ class ConfigurationTests(unittest.TestCase):
         })
 
     def test_windows_config_path(self):
-        with patch("tkkgdownloader.config.os.name", "nt"), patch.dict(
+        with patch("tkkgdownloader.config.os.name", "nt"), patch("tkkgdownloader.config.Path", PureWindowsPath), patch.dict(
             os.environ, {"APPDATA": "C:/Users/Oliver/AppData/Roaming"}
         ):
             self.assertEqual(
                 default_config_path(),
-                Path("C:/Users/Oliver/AppData/Roaming/TKKGDownloader/config.toml"),
+                PureWindowsPath("C:/Users/Oliver/AppData/Roaming/TKKGDownloader/config.toml"),
             )
 
     def test_xdg_config_path(self):
