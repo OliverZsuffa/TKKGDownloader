@@ -327,15 +327,15 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
     raw_seconds = snapshot.get("eta_seconds", "").strip()
     try:
         if raw_seconds:
-            minute_match = re.search(r"\\d+", raw_minutes)
-            second_match = re.search(r"\\d+", raw_seconds)
+            minute_match = re.search(r"\d+", raw_minutes)
+            second_match = re.search(r"\d+", raw_seconds)
             if not second_match:
                 return None
             minutes = int(minute_match.group(0)) if minute_match else 0
             seconds = int(second_match.group(0))
         else:
-            eta_text = re.sub(r"\\s+", " ", snapshot.get("eta", "").strip())
-            match = re.search(r"(?:(\\d+)\\s*m(?:in)?\\s*)?(\\d+)\\s*s(?:ec)?", eta_text, re.I)
+            eta_text = re.sub(r"\s+", " ", snapshot.get("eta", "").strip())
+            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", eta_text, re.I)
             if not match:
                 return None
             minutes = int(match.group(1) or "0")
@@ -393,7 +393,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
         for index in range(links.count()):
             candidate = links.nth(index)
             try:
-                label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+                label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
                 href = candidate.get_attribute("href")
                 disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
                 if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
@@ -431,7 +431,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
     for index in range(buttons.count()):
         candidate = buttons.nth(index)
         try:
-            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
             if re.fullmatch(r"Download ZIP", label, re.I):
                 matches.append(candidate)
         except Exception:
