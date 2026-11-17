@@ -212,9 +212,9 @@ class SpotisaverProgressTests(unittest.TestCase):
         class TTY(io.StringIO):
             def isatty(self):
                 return True
-        reporter = _ProgressReporter()
         output = TTY()
         with contextlib.redirect_stdout(output):
+            reporter = _ProgressReporter()
             reporter.update({"status": "Downloaded 40 of 40 tracks", "progress": "100%"}, 0)
             reporter.update({"status": "Downloaded 1 of 40 tracks", "progress": "3%"}, 0)
         self.assertGreaterEqual(output.getvalue().count("\r"), 2)
