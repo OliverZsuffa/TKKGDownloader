@@ -8,10 +8,11 @@ Correct the queue state interpretation in `src/tkkgdownloader/spotisaver.py`. Th
 
 1. Introduce a small, explicit classification helper for the visible modal snapshot. It should distinguish:
    - `rejected`: the visible status or mini-log explicitly says all download slots are busy.
-   - `accepted`: the visible status or mini-log explicitly indicates active downloading, reports track progress, or says ZIP creation has started or completed.
+   - `pending`: the visible status says "Downloading playlist..."; this is a provisional acceptance signal, not immediate confirmation.
+   - `accepted`: the visible status or mini-log explicitly indicates processing, reports track progress, or says ZIP creation has started or completed. The provisional playlist status becomes accepted only after remaining visible for five seconds without a queue rejection.
    - `unconfirmed`: neither condition is met.
    - `failed`: the existing explicit failure detector reports a failure.
-2. In `_download_click`, keep the existing queue retry timer active only while the explicit busy rejection remains visible. If the notice disappears, clear the retry timer but remain in the unconfirmed state. Do not print a success message, reset the browser request, or click again.
+2. In `_download_click`, keep the existing queue retry timer active only while the explicit busy rejection remains visible. If the notice disappears, clear the retry timer. Treat "Downloading playlist..." as pending for five seconds so a delayed rejection can take precedence. Do not print a success message, reset the browser request, or click again during this window.
 3. Report "Download slot acquired." only on the first transition to accepted. Guard the transition so the message is emitted once, even if progress and ZIP status are both visible on successive polls.
 4. Continue monitoring in the unconfirmed state. Preserve page-close handling, explicit failure handling, browser download event handling, heartbeat logging, cancellation, and the existing retry safeguards.
 5. Ensure a browser download event is treated as completion of a browser transfer, not as proof that the earlier queue request was accepted. File validation and archive validation remain separate downstream checks.
