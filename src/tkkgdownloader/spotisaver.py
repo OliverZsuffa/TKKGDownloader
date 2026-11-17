@@ -817,11 +817,6 @@ def _download_click(
     if progress_reporter.queue_wait_started is not None:
         progress_reporter.finish_queue_wait()
     progress_reporter.finish()
-    if cdp is not None:
-        try:
-            cdp.detach()
-        except Exception:
-            pass
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
     suggested = Path(download.suggested_filename).name
@@ -833,6 +828,12 @@ def _download_click(
     except Exception as exc:
         _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
         raise
+    finally:
+        if cdp is not None:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
     if not destination.is_file():
         raise RuntimeError(f"Browser download did not create the expected file: {destination}")
     size = destination.stat().st_size
