@@ -80,6 +80,10 @@ Add focused tests for:
 - CDP active, missing, empty, or persistently changing file: fail with an actionable timeout.
 - CDP unavailable: call `save_as()` and retain existing behavior.
 - CDP download event correlation and suggested filename handling remain correct.
+- ZIP transfer renders one continuously updated progress bar, not separate initial and completion bars.
+- Archive preparation does not stop at an unexplained 90%; measured progress reaches 100%, or an indeterminate stage ends with an explicit completion state.
+- Measurable extraction, matching, merging, and output-writing stages expose accurate progress; unmeasurable stages use an indeterminate indicator rather than invented percentages.
+- Total elapsed time is measured monotonically and reported on both success and failure.
 - Windows log directory resolves under the user profile and does not use `LOCALAPPDATA`.
 - Non-Windows log directory remains under XDG state or the existing home fallback.
 
@@ -105,5 +109,9 @@ Use deterministic mocks and temporary directories. Do not perform a live Spotisa
 - A completed ZIP is not handed to archive validation until the file is present, nonempty, and stable.
 - Playwright fallback remains functional when CDP is unavailable.
 - On Windows, logs are directly accessible at `%USERPROFILE%\TKKGDownloader\logs`, including with Microsoft Store Python.
-- Terminal output is visually consistent and readable across all download phases, with no stale progress characters, misleading transitions, or avoidable duplicate messages.
+- ZIP transfer has exactly one continuously updated progress bar.
+- Archive preparation has an honest completion state and no unexplained 90% ceiling.
+- Meaningful progress is visible for merging and other measurable processing stages.
+- Total elapsed time is visible during the operation and reported at the end, including failures.
+- Terminal output is consistent and readable across the full workflow, with no stale progress characters, misleading transitions, or avoidable duplicate messages.
 - All relevant tests and repository checks pass.
