@@ -18,6 +18,7 @@ from tkkgdownloader.spotisaver import (
     _download_click,
     _ProgressReporter,
     _browser_launch_options,
+    _format_duration,
 )
 
 
@@ -180,6 +181,11 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(output.getvalue().count("\r"), 1)
         self.assertEqual(output.getvalue().count("\n"), 1)
 
+    def test_elapsed_duration_formatting(self):
+        self.assertEqual(_format_duration(0), "0s")
+        self.assertEqual(_format_duration(63), "1m 03s")
+        self.assertEqual(_format_duration(3661), "1h 01m 01s")
+
     def test_browser_launch_defaults_to_headless_and_muted(self):
         self.assertEqual(_browser_launch_options(), {
             "headless": True,
@@ -204,11 +210,13 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.update_transfer(12_400_000, 25_800_000)
             reporter.last_report = 0
             reporter.update_transfer(12_400_000, None)
+        self.assertEqual(output.getvalue(), "")
+        with contextlib.redirect_stdout(output):
+            reporter.finish_transfer(25_800_000, 25_800_000)
         lines = output.getvalue().splitlines()
-        self.assertIn("48%", lines[0])
-        self.assertIn("11.8 MB / 24.6 MB", lines[0])
-        self.assertIn("11.8 MB received", lines[1])
-        self.assertNotIn("%", lines[1])
+        self.assertEqual(len(lines), 1)
+        self.assertIn("100%", lines[0])
+        self.assertIn("24.6 MB / 24.6 MB", lines[0])
 
     def test_interactive_progress_clears_longer_previous_line(self):
         class TTY(io.StringIO):
@@ -237,6 +245,10 @@ class SpotisaverProgressTests(unittest.TestCase):
                 return 0
             def update(self, snapshot, started):
                 self.events.append(("update", snapshot.get("status", "")))
+            def update_task(self, label, current, total):
+                self.events.append(("task", label, current, total))
+            def finish_transfer(self, received, total):
+                pass
             def finish(self):
                 pass
             def update_transfer(self, received, total):
@@ -316,6 +328,10 @@ class SpotisaverProgressTests(unittest.TestCase):
                 pass
             def update_transfer(self, received, total):
                 self.transfer_updates.append((received, total))
+            def finish_transfer(self, received, total):
+                self.completed_transfer = (received, total)
+            def update_task(self, label, current, total):
+                pass
 
         class CDP:
             def __init__(self, page):
@@ -325,6 +341,8 @@ class SpotisaverProgressTests(unittest.TestCase):
                 self.detached = False
             def send(self, method, params=None):
                 self.commands.append((method, params))
+                if method == "Browser.setDownloadBehavior":
+                    self.download_path = Path(params["downloadPath"])
                 if method == "Target.getTargets":
                     return {"targetInfos": [{
                         "type": "page",
@@ -342,7 +360,7 @@ class SpotisaverProgressTests(unittest.TestCase):
         class Download:
             suggested_filename = "album.zip"
             def save_as(self, path):
-                Path(path).write_bytes(b"archive")
+                raise AssertionError("Playwright save_as must not be used when CDP owns the download")
 
         class Page(FakePage):
             def __init__(self, snapshot, zip_button):
@@ -356,6 +374,7 @@ class SpotisaverProgressTests(unittest.TestCase):
             def wait_for_timeout(self, timeout):
                 if self.zip_button.clicked and not getattr(self, "download_sent", False):
                     self.download_sent = True
+                    self.cdp.download_path.joinpath("album.zip").write_bytes(b"archive")
                     self.events["download"](Download())
 
         reporter = Reporter()
@@ -406,7 +425,8 @@ class SpotisaverProgressTests(unittest.TestCase):
             result = _download_click(page, AlbumButton(), Path(temp))
 
         self.assertEqual(result.name, "album.zip")
-        self.assertEqual(reporter.transfer_updates, [(500, 1000), (1000, 1000)])
+        self.assertEqual(reporter.transfer_updates, [(500, 1000)])
+        self.assertEqual(reporter.completed_transfer, (1000, 1000))
         behavior = next(
             params for method, params in page.cdp.commands
             if method == "Browser.setDownloadBehavior"
