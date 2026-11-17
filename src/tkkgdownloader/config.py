@@ -62,3 +62,21 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
             raise ConfigurationError(f"{key} must be true or false.")
 
     return values
+
+
+def resolve_settings(args: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """Apply CLI, config-file, and built-in precedence in one place."""
+    return {
+        "provider": args.provider or config.get("default_provider", "yt-dlp"),
+        "output_dir": args.output_dir or Path(config.get("output_dir", "output")),
+        "show_browser": (
+            args.show_browser
+            if args.show_browser is not None
+            else config.get("show_browser", False)
+        ),
+        "mute_browser_audio": (
+            not args.unmute_browser
+            if args.unmute_browser is not None
+            else config.get("mute_browser_audio", True)
+        ),
+    }
