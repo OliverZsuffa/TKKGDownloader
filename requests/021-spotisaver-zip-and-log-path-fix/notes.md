@@ -16,4 +16,4 @@
 
 Automated tests have been added or updated for CDP file ownership, single ZIP progress output, archive completion, elapsed time formatting, Windows log path selection, import progress callbacks, and FFmpeg merge progress.
 
-Repository CI and the TKKGData contract smoke test remain to be checked on the pull request. No live Spotisaver download was performed. No merge has been performed.
+GitHub Actions passed on implementation commit `669311bd6708c3d2c0c5f5d83705a10c3f7418fd`: Python compilation succeeded, the published TKKGData contract smoke test succeeded, and all 135 unit tests passed. The merge integration tests exercised FFmpeg progress reporting. No live Spotisaver download was performed. No merge has been performed.
