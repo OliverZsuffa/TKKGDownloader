@@ -401,7 +401,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
         for index in range(links.count()):
             candidate = links.nth(index)
             try:
-                label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+                label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
                 href = candidate.get_attribute("href")
                 disabled = (candidate.get_attribute("aria-disabled") or "").lower() == "true"
                 if re.fullmatch(r"Download ZIP", label, re.I) and href and not disabled:
@@ -439,7 +439,7 @@ def _find_zip_download_button(page: Any) -> Any | None:
     for index in range(buttons.count()):
         candidate = buttons.nth(index)
         try:
-            label = re.sub(r"\s+", " ", candidate.inner_text(timeout=2_000)).strip()
+            label = re.sub(r"\\s+", " ", candidate.inner_text(timeout=2_000)).strip()
             if re.fullmatch(r"Download ZIP", label, re.I):
                 matches.append(candidate)
         except Exception:
