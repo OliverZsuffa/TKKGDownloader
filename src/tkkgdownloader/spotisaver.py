@@ -426,12 +426,42 @@ def _download_failure(snapshot: dict[str, str]) -> str | None:
     return None
 
 
+def _download_state(snapshot: dict[str, str]) -> str:
+    """Classify visible modal evidence, keeping the initial playlist status provisional."""
+    if _download_failure(snapshot):
+        return "failed"
+
+    text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+    if re.search(r"all download slots are busy|slots are busy", text, re.I):
+        return "rejected"
+
+    progress = _parse_track_progress(snapshot)
+    if progress is not None and (progress[0] > 0 or progress[2] > 0):
+        return "accepted"
+
+    if re.search(r"\bDownloading\s+playlist\b", text, re.I):
+        return "pending"
+
+    if re.search(
+        r"download\s+slot\s+(?:acquired|reserved|assigned)|"
+        r"processing\s+(?:the\s+)?(?:playlist|track)|"
+        r"downloading\s+(?:track|audio|file)|"
+        r"creating\s+ZIP\s+archive|ZIP\s+archive\s+created",
+        text,
+        re.I,
+    ):
+        return "accepted"
+
+    return "unconfirmed"
+
+
 def _download_click(
     page: Any,
     locator: Any,
     target: Path,
     *,
     queue_retry_wait_ms: int = 30_000,
+    slot_confirmation_wait_ms: int = 5_000,
     retry_locator: Any | None = None,
 ) -> Path:
     """Submit a visible download request and retry only explicit queue rejections."""
@@ -440,6 +470,8 @@ def _download_click(
     last_snapshot: dict[str, str] | None = None
     last_heartbeat = started
     queue_started: float | None = None
+    pending_started: float | None = None
+    slot_acquired = False
     attempt = 1
     zip_button_clicked = False
     last_phase = ""
@@ -481,9 +513,21 @@ def _download_click(
             _log(f"Could not read download modal yet: {type(exc).__name__}: {exc}", started)
             snapshot = {}
 
-        queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
-        queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
+        state = _download_state(snapshot)
         now = time.monotonic()
+        if state == "pending":
+            if pending_started is None:
+                pending_started = now
+                _log(
+                    f"Spotisaver showed 'Downloading playlist' during attempt {attempt}; "
+                    f"waiting {slot_confirmation_wait_ms / 1000:.1f}s for the queue check to settle.",
+                    started,
+                )
+            if now - pending_started >= slot_confirmation_wait_ms / 1000:
+                state = "accepted"
+        else:
+            pending_started = None
+        queue_busy = state == "rejected"
 
         progress_reporter.update_queue_wait()
         if queue_busy:
@@ -567,29 +611,32 @@ def _download_click(
                         started,
                     )
                     queue_started = None
+                    pending_started = None
                     last_snapshot = None
                     last_heartbeat = time.monotonic()
                     continue
-            # If the queue notice clears before the retry deadline, the normal
-            # processing path below takes over and no retry is issued.
+            # A cleared rejection ends the retry timer, but does not prove
+            # that the site accepted the request. Keep monitoring until there
+            # is positive processing evidence.
         elif queue_started is not None:
             progress_reporter.finish_queue_wait()
-            report_stage("Download slot acquired.", "success")
             _log(
-                f"Spotisaver queue notice cleared during attempt {attempt}. "
-                "Continuing to monitor processing without another click.",
+                f"Spotisaver queue notice cleared during attempt {attempt}; "
+                "processing state remains unconfirmed until positive evidence appears.",
                 started,
             )
             queue_started = None
 
         if snapshot:
-            combined_for_acceptance = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
-            if not queue_busy and progress_reporter.queue_wait_started is not None and (
-                _parse_track_progress(snapshot) is not None
-                or re.search(r"creating ZIP archive|ZIP archive created", combined_for_acceptance, re.I)
-            ):
-                progress_reporter.finish_queue_wait()
+            if state == "accepted" and not slot_acquired:
+                if progress_reporter.queue_wait_started is not None:
+                    progress_reporter.finish_queue_wait()
                 report_stage("Download slot acquired.", "success")
+                slot_acquired = True
+                _log(
+                    f"Spotisaver processing positively confirmed during attempt {attempt}.",
+                    started,
+                )
             if not queue_busy:
                 progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
@@ -598,7 +645,7 @@ def _download_click(
                 phase = "creating ZIP archive"
             elif re.search(r"ZIP archive created", combined_status, re.I):
                 phase = "ZIP archive ready"
-            elif not queue_busy and _parse_track_progress(snapshot) is not None:
+            elif state == "accepted" and _parse_track_progress(snapshot) is not None:
                 phase = "downloading playlist tracks"
             else:
                 phase = ""
@@ -664,7 +711,6 @@ def _download_click(
 
     if progress_reporter.queue_wait_started is not None:
         progress_reporter.finish_queue_wait()
-        report_stage("Download slot acquired.", "success")
     progress_reporter.finish()
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
