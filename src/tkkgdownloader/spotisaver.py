@@ -532,7 +532,7 @@ def _download_click(
     slot_acquired = False
     attempt = 1
     consecutive_rejections = 0
-    expected_album_url = page.url
+    expected_album_url = getattr(page, "url", None)
     zip_button_clicked = False
     last_phase = ""
     cdp = None
@@ -619,7 +619,7 @@ def _download_click(
                         page.reload(wait_until="domcontentloaded", timeout=60_000)
                         if page.is_closed():
                             raise RuntimeError("Spotisaver page closed during the queue recovery reload.")
-                        if page.url.rstrip("/") != expected_album_url.rstrip("/"):
+                        if expected_album_url and page.url.rstrip("/") != expected_album_url.rstrip("/"):
                             raise RuntimeError(f"Spotisaver navigated to an unexpected URL during queue recovery: {page.url!r}.")
                         page.locator("body").wait_for(state="visible", timeout=30_000)
                         retry_button = _find_album_download(page)
@@ -1190,6 +1190,8 @@ def download_and_import(
     manifest_out: dict | None = None,
     show_browser: bool = False,
     mute_browser_audio: bool = True,
+    queue_retry_interval_seconds: int = 25,
+    queue_reload_after_retries: int = 5,
 ) -> list[Path]:
     """Download, validate, and import an album while retaining per-run diagnostics."""
     global _ACTIVE_DIAGNOSTIC_LOGGER, _ACTIVE_PROGRESS_REPORTER
