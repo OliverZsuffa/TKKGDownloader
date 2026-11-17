@@ -326,7 +326,9 @@ class SpotisaverProgressTests(unittest.TestCase):
             if event[0] == "update" and event[1] == "Downloaded 1 of 40 tracks"
         )
         self.assertLess(stage_index, first_progress_index)
-        self.assertIn(("task", "Preparing archive", 100, 100), reporter.events)
+        archive_complete_index = reporter.events.index(("task", "Preparing archive", 100, 100))
+        archive_ready_index = reporter.events.index(("stage", "Archive ready. Downloading..."))
+        self.assertLess(archive_complete_index, archive_ready_index)
 
     def test_cdp_progress_tracks_only_the_zip_download_guid(self):
         class Reporter:
