@@ -82,6 +82,7 @@ class _ProgressReporter:
         line = _render_progress_bar(snapshot)
         if line is None:
             return
+        line += self._elapsed_suffix()
         if self.colour:
             line = re.sub(
                 r"\[(█*)(░*)\]",
@@ -613,6 +614,7 @@ def _download_click(
     cdp_download_guid: str | None = None
     cdp_download_started = False
     cdp_progress_seen = False
+    cdp_download_completed = False
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -893,7 +895,7 @@ def _download_click(
                         _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
 
                 def on_download_progress(event: dict[str, Any]) -> None:
-                    nonlocal cdp_progress_seen
+                    nonlocal cdp_progress_seen, cdp_download_completed
                     if not cdp_download_started or not cdp_download_guid:
                         return
                     if str(event.get("guid", "")) != cdp_download_guid:
@@ -907,6 +909,7 @@ def _download_click(
                     except (TypeError, ValueError, OverflowError):
                         total = None
                     if event.get("state") == "completed":
+                        cdp_download_completed = True
                         progress_reporter.finish_transfer(received, total)
                         progress_reporter.finish()
                         report_stage("ZIP transfer complete. Validating archive...", "success")
@@ -956,39 +959,45 @@ def _download_click(
     suggested = Path(download.suggested_filename).name
     destination = target / suggested
     _log(f"Website suggested filename: {suggested!r}")
-    if cdp_available and cdp_progress_seen:
-        _log(f"Chromium owns ZIP persistence. Waiting for completed file: {destination}", started)
-        deadline = time.monotonic() + 30
-        previous_size = -1
-        stable_checks = 0
-        while time.monotonic() < deadline:
-            if destination.is_file():
-                size_now = destination.stat().st_size
-                if size_now > 0 and size_now == previous_size:
-                    stable_checks += 1
-                    if stable_checks >= 2:
-                        break
-                else:
-                    stable_checks = 0
-                previous_size = size_now
-            page.wait_for_timeout(250)
+    try:
+        if cdp_available and cdp_download_guid is not None:
+            _log(f"Chromium owns ZIP persistence. Waiting for completed file: {destination}", started)
+            deadline = time.monotonic() + 30
+            while not cdp_download_completed and time.monotonic() < deadline:
+                page.wait_for_timeout(250)
+            if not cdp_download_completed:
+                raise RuntimeError("Chromium started the ZIP transfer but did not report completion within 30 seconds.")
+            previous_size = -1
+            stable_checks = 0
+            while time.monotonic() < deadline:
+                if destination.is_file():
+                    size_now = destination.stat().st_size
+                    if size_now > 0 and size_now == previous_size:
+                        stable_checks += 1
+                        if stable_checks >= 2:
+                            break
+                    else:
+                        stable_checks = 0
+                    previous_size = size_now
+                page.wait_for_timeout(250)
+            else:
+                raise RuntimeError(
+                    "Chromium reported ZIP transfer completion, but its download file did not "
+                    f"become non-empty and stable within 30 seconds: {destination}"
+                )
         else:
-            raise RuntimeError(
-                "Chromium reported ZIP transfer completion, but its download file did not "
-                f"become non-empty and stable within 30 seconds: {destination}"
-            )
-    else:
-        _log(f"Saving browser download through Playwright to: {destination}")
-        try:
-            download.save_as(str(destination))
-        except Exception as exc:
-            _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
-            raise
-    if cdp is not None:
-        try:
-            cdp.detach()
-        except Exception:
-            pass
+            _log(f"Saving browser download through Playwright to: {destination}")
+            try:
+                download.save_as(str(destination))
+            except Exception as exc:
+                _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
+                raise
+    finally:
+        if cdp is not None:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
     if cdp_available and not cdp_progress_seen:
         report_stage("ZIP downloaded. Chromium did not expose transfer progress.", "muted")
     if not destination.is_file():
