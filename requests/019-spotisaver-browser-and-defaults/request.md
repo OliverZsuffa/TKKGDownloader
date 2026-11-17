@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implementation in progress
 
 ## Objective
 
@@ -127,7 +127,8 @@ py tkkg.py 150 --provider yt-dlp --output-dir "D:\\Music\\TKKG"
 - [ ] Python compilation and the complete automated test suite pass.
 - [ ] The TKKGData contract smoke test and all existing CI checks pass.
 
-## Open questions
+## Decisions
 
-- Confirm the initial configured default provider and output directory. The proposal retains the current defaults, `yt-dlp` and `./output`, until Oliver chooses otherwise.
-- Confirm whether the configuration file should be created automatically with commented example settings, or simply documented for manual creation.
+- Retain the existing built-in defaults: `yt-dlp` and `./output`.
+- Keep the configuration file optional and do not create it automatically.
+- Browser visibility defaults to headless, and browser audio defaults to muted.
