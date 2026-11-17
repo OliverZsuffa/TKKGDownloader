@@ -427,7 +427,7 @@ def _download_failure(snapshot: dict[str, str]) -> str | None:
 
 
 def _download_state(snapshot: dict[str, str]) -> str:
-    """Classify visible modal evidence without treating a cleared queue notice as acceptance."""
+    """Classify visible modal evidence, keeping the initial playlist status provisional."""
     if _download_failure(snapshot):
         return "failed"
 
@@ -438,6 +438,9 @@ def _download_state(snapshot: dict[str, str]) -> str:
     progress = _parse_track_progress(snapshot)
     if progress is not None and (progress[0] > 0 or progress[2] > 0):
         return "accepted"
+
+    if re.search(r"\bDownloading\s+playlist\b", text, re.I):
+        return "pending"
 
     if re.search(
         r"download\s+slot\s+(?:acquired|reserved|assigned)|"
@@ -458,6 +461,7 @@ def _download_click(
     target: Path,
     *,
     queue_retry_wait_ms: int = 30_000,
+    slot_confirmation_wait_ms: int = 5_000,
     retry_locator: Any | None = None,
 ) -> Path:
     """Submit a visible download request and retry only explicit queue rejections."""
@@ -466,6 +470,7 @@ def _download_click(
     last_snapshot: dict[str, str] | None = None
     last_heartbeat = started
     queue_started: float | None = None
+    pending_started: float | None = None
     slot_acquired = False
     attempt = 1
     zip_button_clicked = False
@@ -509,8 +514,20 @@ def _download_click(
             snapshot = {}
 
         state = _download_state(snapshot)
-        queue_busy = state == "rejected"
         now = time.monotonic()
+        if state == "pending":
+            if pending_started is None:
+                pending_started = now
+                _log(
+                    f"Spotisaver showed 'Downloading playlist' during attempt {attempt}; "
+                    f"waiting {slot_confirmation_wait_ms / 1000:.1f}s for the queue check to settle.",
+                    started,
+                )
+            if now - pending_started >= slot_confirmation_wait_ms / 1000:
+                state = "accepted"
+        else:
+            pending_started = None
+        queue_busy = state == "rejected"
 
         progress_reporter.update_queue_wait()
         if queue_busy:
@@ -594,6 +611,7 @@ def _download_click(
                         started,
                     )
                     queue_started = None
+                    pending_started = None
                     last_snapshot = None
                     last_heartbeat = time.monotonic()
                     continue
