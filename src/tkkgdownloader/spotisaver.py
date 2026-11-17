@@ -32,6 +32,7 @@ def _normalize(value: str) -> str:
 
 
 _ACTIVE_PROGRESS_REPORTER: Any | None = None
+_ACTIVE_RUN_STARTED: float | None = None
 _ACTIVE_DIAGNOSTIC_LOGGER: logging.Logger | None = None
 
 
@@ -63,14 +64,19 @@ class _ProgressReporter:
         self.last_report = time.monotonic()
         self.queue_wait_started: float | None = None
         self.queue_wait_last_line: str | None = None
+        self.transfer_completed = False
 
     def _style(self, value: str, tone: str) -> str:
         colour = self._COLOURS.get(tone)
         return f"{colour}{value}{self._RESET}" if self.colour and colour else value
 
+    def _elapsed_suffix(self) -> str:
+        started = globals().get("_ACTIVE_RUN_STARTED")
+        return f"  |  Total elapsed {_format_duration(time.monotonic() - started)}" if started is not None else ""
+
     def stage(self, message: str, tone: str = "info") -> None:
         self.finish()
-        print(self._style(message, tone), flush=True)
+        print(self._style(message + self._elapsed_suffix(), tone), flush=True)
 
     def update(self, snapshot: dict[str, str], started: float) -> None:
         line = _render_progress_bar(snapshot)
@@ -109,7 +115,7 @@ class _ProgressReporter:
         if self.queue_wait_started is None:
             return
         elapsed = int(time.monotonic() - self.queue_wait_started)
-        line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
+        line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed{self._elapsed_suffix()}"
         if self.interactive:
             if line != self.queue_wait_last_line:
                 padding = " " * max(0, self.last_visible_length - len(line))
@@ -155,15 +161,47 @@ class _ProgressReporter:
             line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
         if self.colour and total is not None:
             line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        line += self._elapsed_suffix()
         if self.interactive:
             visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
             padding = " " * max(0, self.last_visible_length - len(visible_line))
             print("\r" + line + padding, end="", flush=True)
             self.active_line = True
             self.last_visible_length = len(visible_line)
-        elif time.monotonic() - self.last_report >= 1:
+        # Redirected output is emitted once by finish_transfer, not once per CDP event.
+
+    def update_task(self, label: str, current: int, total: int) -> None:
+        total = max(1, int(total))
+        current = max(0, min(int(current), total))
+        percentage = round(current * 100 / total)
+        filled = round(20 * percentage / 100)
+        bar = "█" * filled + "░" * (20 - filled)
+        line = f"{label:<24} [{bar}] {percentage:3d}%  {current}/{total}{self._elapsed_suffix()}"
+        if self.colour:
+            line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        if self.interactive:
+            visible = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible))
+            print("\r" + line + padding, end="", flush=True)
+            self.active_line = True
+            self.last_visible_length = len(visible)
+            self.last_line = line
+        elif current == total or time.monotonic() - self.last_report >= 2:
             print(line, flush=True)
             self.last_report = time.monotonic()
+
+    def finish_transfer(self, received: int, total: int | None) -> None:
+        self.transfer_completed = True
+        if not self.interactive:
+            received_text = _format_bytes(received)
+            if total and total > 0:
+                percentage = min(100, round(received * 100 / total))
+                filled = round(20 * percentage / 100)
+                bar = "█" * filled + "░" * (20 - filled)
+                line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
+            else:
+                line = f"ZIP transfer complete  {received_text} received"
+            print(line + self._elapsed_suffix(), flush=True)
 
 
 def _format_bytes(value: int) -> str:
@@ -175,11 +213,46 @@ def _format_bytes(value: int) -> str:
     return f"{amount:.1f} GB"
 
 
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes:d}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def start_run_timer(started: float | None = None) -> None:
+    global _ACTIVE_RUN_STARTED
+    _ACTIVE_RUN_STARTED = started if started is not None else time.monotonic()
+
+
+def finish_run_timer(success: bool) -> None:
+    global _ACTIVE_RUN_STARTED
+    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if reporter is not None:
+        reporter.finish()
+    started = _ACTIVE_RUN_STARTED
+    if started is not None:
+        label = "Completed" if success else "Stopped"
+        print(f"{label}. Total elapsed time: {_format_duration(time.monotonic() - started)}.", flush=True)
+    _ACTIVE_RUN_STARTED = None
+
+
+def report_progress(label: str, current: int, total: int) -> None:
+    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if reporter is None:
+        reporter = _ProgressReporter()
+        globals()["_ACTIVE_PROGRESS_REPORTER"] = reporter
+    reporter.update_task(label, current, total)
+
+
 def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logger, Path]:
     """Create a unique persistent log outside the temporary download workspace."""
     if os.name == "nt":
-        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        log_dir = root / "TKKGDownloader" / "logs"
+        log_dir = Path.home() / "TKKGDownloader" / "logs"
     else:
         log_dir = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
         log_dir = log_dir / "tkkgdownloader" / "logs"
@@ -826,10 +899,12 @@ def _download_click(
                         total = int(total_number) if total_number > 0 else None
                     except (TypeError, ValueError, OverflowError):
                         total = None
-                    progress_reporter.update_transfer(received, total)
                     if event.get("state") == "completed":
+                        progress_reporter.finish_transfer(received, total)
                         progress_reporter.finish()
                         report_stage("ZIP transfer complete. Validating archive...", "success")
+                    else:
+                        progress_reporter.update_transfer(received, total)
                     elif event.get("state") == "canceled":
                         _log("Chromium reported that the ZIP transfer was canceled.", started)
 
@@ -874,18 +949,39 @@ def _download_click(
     suggested = Path(download.suggested_filename).name
     destination = target / suggested
     _log(f"Website suggested filename: {suggested!r}")
-    _log(f"Saving browser download to: {destination}")
-    try:
-        download.save_as(str(destination))
-    except Exception as exc:
-        _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
-        raise
-    finally:
-        if cdp is not None:
-            try:
-                cdp.detach()
-            except Exception:
-                pass
+    if cdp_available and cdp_progress_seen:
+        _log(f"Chromium owns ZIP persistence. Waiting for completed file: {destination}", started)
+        deadline = time.monotonic() + 30
+        previous_size = -1
+        stable_checks = 0
+        while time.monotonic() < deadline:
+            if destination.is_file():
+                size_now = destination.stat().st_size
+                if size_now > 0 and size_now == previous_size:
+                    stable_checks += 1
+                    if stable_checks >= 2:
+                        break
+                else:
+                    stable_checks = 0
+                previous_size = size_now
+            page.wait_for_timeout(250)
+        else:
+            raise RuntimeError(
+                "Chromium reported ZIP transfer completion, but its download file did not "
+                f"become non-empty and stable within 30 seconds: {destination}"
+            )
+    else:
+        _log(f"Saving browser download through Playwright to: {destination}")
+        try:
+            download.save_as(str(destination))
+        except Exception as exc:
+            _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
+            raise
+    if cdp is not None:
+        try:
+            cdp.detach()
+        except Exception:
+            pass
     if cdp_available and not cdp_progress_seen:
         report_stage("ZIP downloaded. Chromium did not expose transfer progress.", "muted")
     if not destination.is_file():
