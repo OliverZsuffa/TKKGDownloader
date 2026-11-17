@@ -14,10 +14,11 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [018: Validate Spotisaver download slot acquisition](018-spotisaver-slot-state-validation/request.md) — distinguish an explicit queue rejection, an unconfirmed state, and positive evidence that processing has started.
+
 - [016: Safe audio merging and introductory track diagnostics](016-safe-audio-merging/request.md) — validate source formats and output duration, use PCM fallback when needed, and assess the introductory segment separately.
 
 - [015: Robust Spotisaver track identity](015-robust-spotisaver-track-identity/request.md) — identify tracks through exact filename variants, embedded metadata, and verified album identity without fuzzy automatic matching.
-
 
 - [013: Diagnose and produce a high-quality episode 150 merge](013-episode-150-audio-quality-diagnostics/request.md) — preserve Spotisaver sources, inspect all 40 tracks, compare stream-copy and decoded PCM merging, and review all 39 boundaries.
 
