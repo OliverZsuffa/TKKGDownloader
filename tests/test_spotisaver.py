@@ -872,7 +872,7 @@ class SpotisaverConsoleTests(unittest.TestCase):
     def test_windows_diagnostic_logs_use_user_profile_not_localappdata(self):
         with tempfile.TemporaryDirectory() as temp:
             profile = Path(temp) / "profile"
-            with patch("tkkgdownloader.spotisaver.os.name", "nt"), \
+            with patch("tkkgdownloader.spotisaver.os", type("MockOS", (), {"name": "nt"})()), \
                  patch("tkkgdownloader.spotisaver.Path.home", return_value=profile), \
                  patch.dict(os.environ, {"LOCALAPPDATA": str(Path(temp) / "store-package")}):
                 logger, path = _create_diagnostic_logger(144)
