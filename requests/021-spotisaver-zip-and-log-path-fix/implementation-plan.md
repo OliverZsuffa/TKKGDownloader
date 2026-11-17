@@ -25,7 +25,18 @@ Fix the two confirmed Spotisaver issues without changing queue behavior, browser
 - Keep the existing final file existence and nonzero size checks, then continue into the unchanged archive validation workflow.
 - Ensure CDP detach still happens on success and failure.
 
-## 3. Tests
+## 3. Audit and improve terminal progress output
+
+- Review the complete terminal output path from browser startup through track download, archive preparation, ZIP transfer, validation, and error reporting.
+- Use the episode 144 output supplied by the user as a concrete reference, including the transition from track progress to archive preparation and the ZIP transfer progress display.
+- Identify and correct visual defects such as inconsistent spacing, progress bar width or alignment, stale characters, confusing phase transitions, duplicate or contradictory status lines, and unclear byte or percentage formatting.
+- Keep the display compact and readable in a standard Windows PowerShell terminal.
+- Ensure progress updates do not overwrite unrelated status messages and that each phase has a clear, consistent presentation.
+- Preserve useful detail, including track counts, ETA when valid, ZIP byte progress when known, and clear completion or failure messages.
+- Add or adjust deterministic tests for formatting, line replacement, phase ordering, and representative short and long progress values.
+- Do not introduce terminal-only dependencies or change download semantics solely for cosmetic reasons.
+
+## 4. Tests
 
 Add focused tests for:
 - CDP active, correlated download completed, file exists: use the Chromium file and never call `save_as()`.
@@ -38,13 +49,13 @@ Add focused tests for:
 
 Use deterministic mocks and temporary directories. Do not perform a live Spotisaver download in automated tests.
 
-## 4. Documentation
+## 5. Documentation
 
 - Update the README Windows diagnostic log location.
 - Update the relevant Knowledge Base entry and request implementation record.
 - Explain that CDP owns file persistence when available and Playwright owns it only in fallback mode.
 
-## 5. Verification
+## 6. Verification
 
 - Run the complete unit test suite.
 - Run Python compilation checks.
@@ -58,4 +69,5 @@ Use deterministic mocks and temporary directories. Do not perform a live Spotisa
 - A completed ZIP is not handed to archive validation until the file is present, nonempty, and stable.
 - Playwright fallback remains functional when CDP is unavailable.
 - On Windows, logs are directly accessible at `%USERPROFILE%\TKKGDownloader\logs`, including with Microsoft Store Python.
+- Terminal output is visually consistent and readable across all download phases, with no stale progress characters, misleading transitions, or avoidable duplicate messages.
 - All relevant tests and repository checks pass.
