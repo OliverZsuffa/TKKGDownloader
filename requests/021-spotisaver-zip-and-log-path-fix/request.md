@@ -18,4 +18,8 @@ The logger should use a stable, user accessible Windows location that is not red
 2. Playwright `download.save_as()` remains the fallback only when CDP download handling is unavailable.
 3. Diagnostic logs on Windows are written to a stable user profile directory visible to ordinary Windows applications.
 4. Existing non-Windows log location behavior remains unchanged.
-5. Tests cover both ZIP persistence paths and the Windows log path selection.
+5. ZIP transfer is represented by one progress bar, not separate initial and final bars.
+6. Archive preparation reaches an explicit 100% completion state when the website confirms the ZIP is ready, rather than remaining at 90%.
+7. Progress is visible for extraction, track metadata reading, matching, integrity checks, copying, merging, and final verification wherever reliable measurements exist.
+8. A total elapsed timer covers the full episode workflow and is reported on success or failure.
+9. Tests cover both ZIP persistence paths, progress rendering and callbacks, elapsed time formatting, and Windows log path selection.
