@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 def track_number(path: Path) -> int:
@@ -39,6 +39,58 @@ def _run(command: list[str]) -> dict[str, Any]:
         "returncode": result.returncode,
         "stdout": result.stdout,
         "stderr": result.stderr,
+    }
+
+
+def _run_with_progress(
+    command: list[str],
+    *,
+    label: str,
+    total_duration: float,
+    progress_callback: Callable[[str, int, int], None] | None,
+) -> dict[str, Any]:
+    """Run FFmpeg and translate its machine-readable progress into a real percentage."""
+    if progress_callback is None or total_duration <= 0:
+        return _run(command)
+    progress_command = [*command[:-1], "-progress", "pipe:1", "-nostats", command[-1]]
+    process = subprocess.Popen(
+        progress_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    stdout_lines: list[str] = []
+    progress_finished = False
+    if process.stdout is not None:
+        for line in process.stdout:
+            stdout_lines.append(line)
+            key, separator, value = line.strip().partition("=")
+            if not separator:
+                continue
+            if key == "out_time_us":
+                try:
+                    seconds = int(value) / 1_000_000
+                except ValueError:
+                    continue
+                progress_callback(label, min(99, max(0, round(seconds * 100 / total_duration))), 100)
+            elif key == "progress" and value == "end":
+                progress_callback(label, 100, 100)
+                progress_finished = True
+    stderr = process.stderr.read() if process.stderr is not None else ""
+    if process.stdout is not None:
+        process.stdout.close()
+    if process.stderr is not None:
+        process.stderr.close()
+    return_code = process.wait()
+    if return_code == 0 and not progress_finished:
+        progress_callback(label, 100, 100)
+    return {
+        "command": progress_command,
+        "returncode": return_code,
+        "stdout": "".join(stdout_lines),
+        "stderr": stderr,
     }
 
 
@@ -97,20 +149,31 @@ def _write_concat(paths: list[Path], destination: Path) -> None:
 
 def _run_stream_copy(
     tracks: list[Path], concat_file: Path, temporary_output: Path, ffmpeg: str,
+    *,
+    total_duration: float | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     _write_concat(tracks, concat_file)
-    return _run([
+    command = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
         "-f", "concat", "-safe", "0", "-i", str(concat_file),
         "-c", "copy", str(temporary_output),
-    ])
+    ]
+    if total_duration and progress_callback is not None:
+        return _run_with_progress(
+            command, label="Merging audio", total_duration=total_duration,
+            progress_callback=progress_callback,
+        )
+    return _run(command)
 
 
 def _run_pcm_merge(
     tracks: list[Path], temporary_output: Path, ffmpeg: str, ffprobe: str,
     workspace: Path,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
     source_info = [_probe(path, ffprobe) for path in tracks]
+    total_duration = sum(item["duration_seconds"] for item in source_info)
     sample_rate = max(item["sample_rate"] or 44100 for item in source_info)
     channels = max(item["channels"] or 2 for item in source_info)
 
@@ -120,11 +183,16 @@ def _run_pcm_merge(
         conversions: list[dict[str, Any]] = []
         for index, source in enumerate(tracks, start=1):
             wav = pcm_dir / f"{index:04d}.wav"
-            conversion = _run([
-                ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(source),
-                "-map", "0:a:0", "-ar", str(sample_rate), "-ac", str(channels),
-                "-c:a", "pcm_s24le", str(wav),
-            ])
+            conversion = _run_with_progress(
+                [
+                    ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(source),
+                    "-map", "0:a:0", "-ar", str(sample_rate), "-ac", str(channels),
+                    "-c:a", "pcm_s24le", str(wav),
+                ],
+                label=f"Converting track {index}/{len(tracks)}",
+                total_duration=source_info[index - 1]["duration_seconds"],
+                progress_callback=progress_callback,
+            )
             conversions.append(conversion)
             if conversion["returncode"] != 0 or not wav.is_file():
                 raise RuntimeError(
@@ -135,18 +203,28 @@ def _run_pcm_merge(
         concat_file = pcm_dir / "segments.txt"
         _write_concat(wavs, concat_file)
         master = pcm_dir / "master.wav"
-        master_result = _run([
-            ffmpeg, "-hide_banner", "-v", "error", "-y",
-            "-f", "concat", "-safe", "0", "-i", str(concat_file),
-            "-c:a", "pcm_s24le", str(master),
-        ])
+        master_result = _run_with_progress(
+            [
+                ffmpeg, "-hide_banner", "-v", "error", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(concat_file),
+                "-c:a", "pcm_s24le", str(master),
+            ],
+            label="Combining audio",
+            total_duration=total_duration,
+            progress_callback=progress_callback,
+        )
         if master_result["returncode"] != 0 or not master.is_file():
             raise RuntimeError(f"PCM concatenation failed: {master_result['stderr'].strip()}")
 
-        encode = _run([
-            ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(master),
-            "-c:a", "libmp3lame", "-b:a", "320k", str(temporary_output),
-        ])
+        encode = _run_with_progress(
+            [
+                ffmpeg, "-hide_banner", "-v", "error", "-y", "-i", str(master),
+                "-c:a", "libmp3lame", "-b:a", "320k", str(temporary_output),
+            ],
+            label="Encoding MP3",
+            total_duration=total_duration,
+            progress_callback=progress_callback,
+        )
         if encode["returncode"] != 0:
             raise RuntimeError(f"320 kbit/s MP3 encoding failed: {encode['stderr'].strip()}")
 
@@ -186,6 +264,7 @@ def merge_tracks(
     manifest: dict[str, Any] | None = None,
     ffprobe: str = "ffprobe",
     strategy: str = "auto",
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> None:
     """Merge tracks safely. Auto mode validates stream copy and falls back to PCM."""
     if strategy not in {"auto", "pcm", "legacy"}:
@@ -207,11 +286,18 @@ def merge_tracks(
 
     try:
         if strategy in {"auto", "pcm"}:
-            source_info = [_probe(path, ffprobe) for path in ordered]
+            source_info = []
+            for index, path in enumerate(ordered, start=1):
+                source_info.append(_probe(path, ffprobe))
+                if progress_callback is not None:
+                    progress_callback("Inspecting audio tracks", index, len(ordered))
             expected_duration = sum(item["duration_seconds"] for item in source_info)
 
         if strategy == "legacy":
-            stream_result = _run_stream_copy(ordered, concat_file, temporary_output, ffmpeg)
+            stream_result = _run_stream_copy(
+                ordered, concat_file, temporary_output, ffmpeg,
+                total_duration=expected_duration, progress_callback=progress_callback,
+            )
             attempts.append({"method": "stream_copy", **stream_result})
             if stream_result["returncode"] == 0:
                 selected_method = "stream_copy"
@@ -228,7 +314,10 @@ def merge_tracks(
                     raise RuntimeError(f"FFmpeg could not merge tracks: {fallback['stderr'].strip()}")
         else:
             if strategy == "auto" and _compatible_formats(source_info):
-                stream_result = _run_stream_copy(ordered, concat_file, temporary_output, ffmpeg)
+                stream_result = _run_stream_copy(
+                    ordered, concat_file, temporary_output, ffmpeg,
+                    total_duration=expected_duration, progress_callback=progress_callback,
+                )
                 stream_attempt: dict[str, Any] = {"method": "stream_copy", **stream_result}
                 if stream_result["returncode"] == 0:
                     try:
@@ -259,6 +348,7 @@ def merge_tracks(
                 temporary_output.unlink(missing_ok=True)
                 pcm_details = _run_pcm_merge(
                     ordered, temporary_output, ffmpeg, ffprobe, output.parent,
+                    progress_callback=progress_callback,
                 )
                 rendered = _validate_output(temporary_output, ffmpeg, ffprobe)
                 difference = rendered["duration_seconds"] - expected_duration

@@ -32,6 +32,7 @@ def _normalize(value: str) -> str:
 
 
 _ACTIVE_PROGRESS_REPORTER: Any | None = None
+_ACTIVE_RUN_STARTED: float | None = None
 _ACTIVE_DIAGNOSTIC_LOGGER: logging.Logger | None = None
 
 
@@ -63,19 +64,25 @@ class _ProgressReporter:
         self.last_report = time.monotonic()
         self.queue_wait_started: float | None = None
         self.queue_wait_last_line: str | None = None
+        self.transfer_completed = False
 
     def _style(self, value: str, tone: str) -> str:
         colour = self._COLOURS.get(tone)
         return f"{colour}{value}{self._RESET}" if self.colour and colour else value
 
+    def _elapsed_suffix(self) -> str:
+        started = globals().get("_ACTIVE_RUN_STARTED")
+        return f"  |  Total elapsed {_format_duration(time.monotonic() - started)}" if started is not None else ""
+
     def stage(self, message: str, tone: str = "info") -> None:
         self.finish()
-        print(self._style(message, tone), flush=True)
+        print(self._style(message + self._elapsed_suffix(), tone), flush=True)
 
     def update(self, snapshot: dict[str, str], started: float) -> None:
         line = _render_progress_bar(snapshot)
         if line is None:
             return
+        line += self._elapsed_suffix()
         if self.colour:
             line = re.sub(
                 r"\[(█*)(░*)\]",
@@ -109,7 +116,7 @@ class _ProgressReporter:
         if self.queue_wait_started is None:
             return
         elapsed = int(time.monotonic() - self.queue_wait_started)
-        line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
+        line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed{self._elapsed_suffix()}"
         if self.interactive:
             if line != self.queue_wait_last_line:
                 padding = " " * max(0, self.last_visible_length - len(line))
@@ -155,15 +162,47 @@ class _ProgressReporter:
             line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
         if self.colour and total is not None:
             line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        line += self._elapsed_suffix()
         if self.interactive:
             visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
             padding = " " * max(0, self.last_visible_length - len(visible_line))
             print("\r" + line + padding, end="", flush=True)
             self.active_line = True
             self.last_visible_length = len(visible_line)
-        elif time.monotonic() - self.last_report >= 1:
+        # Redirected output is emitted once by finish_transfer, not once per CDP event.
+
+    def update_task(self, label: str, current: int, total: int) -> None:
+        total = max(1, int(total))
+        current = max(0, min(int(current), total))
+        percentage = round(current * 100 / total)
+        filled = round(20 * percentage / 100)
+        bar = "█" * filled + "░" * (20 - filled)
+        line = f"{label:<24} [{bar}] {percentage:3d}%  {current}/{total}{self._elapsed_suffix()}"
+        if self.colour:
+            line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        if self.interactive:
+            visible = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible))
+            print("\r" + line + padding, end="", flush=True)
+            self.active_line = True
+            self.last_visible_length = len(visible)
+            self.last_line = line
+        elif current == total or time.monotonic() - self.last_report >= 2:
             print(line, flush=True)
             self.last_report = time.monotonic()
+
+    def finish_transfer(self, received: int, total: int | None) -> None:
+        self.transfer_completed = True
+        if not self.interactive:
+            received_text = _format_bytes(received)
+            if total and total > 0:
+                percentage = min(100, round(received * 100 / total))
+                filled = round(20 * percentage / 100)
+                bar = "█" * filled + "░" * (20 - filled)
+                line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
+            else:
+                line = f"ZIP transfer complete  {received_text} received"
+            print(line + self._elapsed_suffix(), flush=True)
 
 
 def _format_bytes(value: int) -> str:
@@ -175,11 +214,46 @@ def _format_bytes(value: int) -> str:
     return f"{amount:.1f} GB"
 
 
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes:d}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def start_run_timer(started: float | None = None) -> None:
+    global _ACTIVE_RUN_STARTED
+    _ACTIVE_RUN_STARTED = started if started is not None else time.monotonic()
+
+
+def finish_run_timer(success: bool) -> None:
+    global _ACTIVE_RUN_STARTED
+    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if reporter is not None:
+        reporter.finish()
+    started = _ACTIVE_RUN_STARTED
+    if started is not None:
+        label = "Completed" if success else "Stopped"
+        print(f"{label}. Total elapsed time: {_format_duration(time.monotonic() - started)}.", flush=True)
+    _ACTIVE_RUN_STARTED = None
+
+
+def report_progress(label: str, current: int, total: int) -> None:
+    reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
+    if reporter is None:
+        reporter = _ProgressReporter()
+        globals()["_ACTIVE_PROGRESS_REPORTER"] = reporter
+    reporter.update_task(label, current, total)
+
+
 def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logger, Path]:
     """Create a unique persistent log outside the temporary download workspace."""
     if os.name == "nt":
-        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        log_dir = root / "TKKGDownloader" / "logs"
+        log_dir = Path.home() / "TKKGDownloader" / "logs"
     else:
         log_dir = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
         log_dir = log_dir / "tkkgdownloader" / "logs"
@@ -540,6 +614,7 @@ def _download_click(
     cdp_download_guid: str | None = None
     cdp_download_started = False
     cdp_progress_seen = False
+    cdp_download_completed = False
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -561,325 +636,380 @@ def _download_click(
         "without a fixed download-event timeout.",
         started,
     )
-    while not download_events:
-        if page.is_closed():
-            raise RuntimeError(
-                "Spotisaver page closed before a browser download event arrived. "
-                f"Last modal state: {(last_snapshot or {})!r}"
-            )
-
-        try:
-            snapshot = _read_download_modal(page)
-        except Exception as exc:
+    try:
+        while not download_events:
             if page.is_closed():
                 raise RuntimeError(
-                    "Spotisaver page closed while waiting for the download event."
-                ) from exc
-            _log(f"Could not read download modal yet: {type(exc).__name__}: {exc}", started)
-            snapshot = {}
-
-        state = _download_state(snapshot)
-        now = time.monotonic()
-        if state == "pending":
-            if pending_started is None:
-                pending_started = now
-                _log(
-                    f"Spotisaver showed 'Downloading playlist' during attempt {attempt}; "
-                    f"waiting {slot_confirmation_wait_ms / 1000:.1f}s for the queue check to settle.",
-                    started,
+                    "Spotisaver page closed before a browser download event arrived. "
+                    f"Last modal state: {(last_snapshot or {})!r}"
                 )
-            if now - pending_started >= slot_confirmation_wait_ms / 1000:
-                state = "accepted"
-        else:
-            pending_started = None
-        queue_busy = state == "rejected"
 
-        progress_reporter.update_queue_wait()
-        if queue_busy:
-            if queue_started is None:
-                queue_started = now
-                stated_delay = _queue_retry_seconds(snapshot)
-                delay_text = f" Website retry instruction: {stated_delay}s." if stated_delay else ""
-                _log(
-                    f"Spotisaver rejected attempt {attempt}: all download slots are busy."
-                    f"{delay_text} Will close the queue modal and retry after "
-                    f"{queue_retry_wait_ms / 1000:.0f}s if the rejection remains active.",
-                    started,
-                )
-            elif now - queue_started >= queue_retry_wait_ms / 1000:
-                # Re-read immediately before acting. The queue may have cleared
-                # between the previous poll and the retry deadline.
+            try:
                 snapshot = _read_download_modal(page)
-                queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
-                queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
-                if queue_busy and not download_events:
-                    if consecutive_rejections >= queue_reload_after_retries:
-                        _log(f"{consecutive_rejections} consecutive queue retries were rejected. Reloading the complete album page.", started)
-                        report_stage("Queue still busy. Reloading album page...", "warning")
-                        page.reload(wait_until="domcontentloaded", timeout=60_000)
-                        if page.is_closed():
-                            raise RuntimeError("Spotisaver page closed during the queue recovery reload.")
-                        if expected_album_url and page.url.rstrip("/") != expected_album_url.rstrip("/"):
-                            raise RuntimeError(f"Spotisaver navigated to an unexpected URL during queue recovery: {page.url!r}.")
-                        page.locator("body").wait_for(state="visible", timeout=30_000)
-                        retry_button = _find_album_download(page)
-                        button_deadline = time.monotonic() + 120
-                        while retry_button is None and time.monotonic() < button_deadline:
+            except Exception as exc:
+                if page.is_closed():
+                    raise RuntimeError(
+                        "Spotisaver page closed while waiting for the download event."
+                    ) from exc
+                _log(f"Could not read download modal yet: {type(exc).__name__}: {exc}", started)
+                snapshot = {}
+
+            state = _download_state(snapshot)
+            now = time.monotonic()
+            if state == "pending":
+                if pending_started is None:
+                    pending_started = now
+                    _log(
+                        f"Spotisaver showed 'Downloading playlist' during attempt {attempt}; "
+                        f"waiting {slot_confirmation_wait_ms / 1000:.1f}s for the queue check to settle.",
+                        started,
+                    )
+                if now - pending_started >= slot_confirmation_wait_ms / 1000:
+                    state = "accepted"
+            else:
+                pending_started = None
+            queue_busy = state == "rejected"
+
+            progress_reporter.update_queue_wait()
+            if queue_busy:
+                if queue_started is None:
+                    queue_started = now
+                    stated_delay = _queue_retry_seconds(snapshot)
+                    delay_text = f" Website retry instruction: {stated_delay}s." if stated_delay else ""
+                    _log(
+                        f"Spotisaver rejected attempt {attempt}: all download slots are busy."
+                        f"{delay_text} Will close the queue modal and retry after "
+                        f"{queue_retry_wait_ms / 1000:.0f}s if the rejection remains active.",
+                        started,
+                    )
+                elif now - queue_started >= queue_retry_wait_ms / 1000:
+                    # Re-read immediately before acting. The queue may have cleared
+                    # between the previous poll and the retry deadline.
+                    snapshot = _read_download_modal(page)
+                    queue_text = " ".join((snapshot.get("status", ""), snapshot.get("log", "")))
+                    queue_busy = bool(re.search(r"all download slots are busy|slots are busy", queue_text, re.I))
+                    if queue_busy and not download_events:
+                        if consecutive_rejections >= queue_reload_after_retries:
+                            _log(f"{consecutive_rejections} consecutive queue retries were rejected. Reloading the complete album page.", started)
+                            report_stage("Queue still busy. Reloading album page...", "warning")
+                            page.reload(wait_until="domcontentloaded", timeout=60_000)
                             if page.is_closed():
-                                raise RuntimeError("Spotisaver page closed while waiting for the album button after reload.")
-                            page.wait_for_timeout(1_000)
+                                raise RuntimeError("Spotisaver page closed during the queue recovery reload.")
+                            if expected_album_url and page.url.rstrip("/") != expected_album_url.rstrip("/"):
+                                raise RuntimeError(f"Spotisaver navigated to an unexpected URL during queue recovery: {page.url!r}.")
+                            page.locator("body").wait_for(state="visible", timeout=30_000)
                             retry_button = _find_album_download(page)
+                            button_deadline = time.monotonic() + 120
+                            while retry_button is None and time.monotonic() < button_deadline:
+                                if page.is_closed():
+                                    raise RuntimeError("Spotisaver page closed while waiting for the album button after reload.")
+                                page.wait_for_timeout(1_000)
+                                retry_button = _find_album_download(page)
+                            if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
+                                _log_selector_state(page, "#downloadAllBtn")
+                                raise RuntimeError("Spotisaver album page reloaded, but the verified download button did not become available.")
+                            consecutive_rejections = 0
+                            attempt += 1
+                            _log(f"Album page reloaded successfully. Submitting attempt {attempt}.", started)
+                            retry_button.click()
+                            queue_started = None
+                            pending_started = None
+                            last_snapshot = None
+                            last_heartbeat = time.monotonic()
+                            continue
+
+                        _log(
+                            f"Queue rejection is still active after {queue_retry_wait_ms / 1000:.0f}s. "
+                            "Closing the visible modal before retrying.",
+                            started,
+                        )
+                        close_button = page.locator('.modal.show button[aria-label="Close"]')
+                        if not close_button.count() or not close_button.first.is_visible():
+                            raise RuntimeError(
+                                "Spotisaver queue retry is required, but the visible modal Close "
+                                f"button was not found. Last modal state: {snapshot!r}"
+                            )
+                        close_button.first.click()
+                        _log("Clicked the modal Close button. Waiting for the modal to disappear.", started)
+
+                        modal = page.locator(".modal.show")
+                        modal_deadline = time.monotonic() + 10
+                        while modal.count() and modal.first.is_visible():
+                            if page.is_closed():
+                                raise RuntimeError("Spotisaver page closed while closing the queue modal.")
+                            if time.monotonic() >= modal_deadline:
+                                raise RuntimeError(
+                                    "Spotisaver queue modal did not close after clicking Close. "
+                                    f"Last modal state: {snapshot!r}"
+                                )
+                            page.wait_for_timeout(250)
+
+                        _log("Confirmed that the queue modal is closed.", started)
+                        if retry_locator is None:
+                            retry_button = _find_album_download(page)
+                            button_description = "verified 'Download entire playlist' button"
+                            button_deadline = time.monotonic() + 10
+                            while retry_button is None and time.monotonic() < button_deadline:
+                                if page.is_closed():
+                                    raise RuntimeError("Spotisaver page closed before the album button could be retried.")
+                                page.wait_for_timeout(500)
+                                retry_button = _find_album_download(page)
+                        else:
+                            retry_button = retry_locator
+                            button_description = "original visible download control"
+                            button_deadline = time.monotonic() + 10
+                            while (
+                                (not retry_button.is_visible() or not retry_button.is_enabled())
+                                and time.monotonic() < button_deadline
+                            ):
+                                if page.is_closed():
+                                    raise RuntimeError("Spotisaver page closed before the download control could be retried.")
+                                page.wait_for_timeout(500)
                         if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
                             _log_selector_state(page, "#downloadAllBtn")
-                            raise RuntimeError("Spotisaver album page reloaded, but the verified download button did not become available.")
-                        consecutive_rejections = 0
+                            raise RuntimeError(
+                                f"Spotisaver queue modal closed, but the {button_description} "
+                                "did not become available."
+                            )
+
+                        consecutive_rejections += 1
                         attempt += 1
-                        _log(f"Album page reloaded successfully. Submitting attempt {attempt}.", started)
+                        _log(f"Submitting Spotisaver download attempt {attempt}; {consecutive_rejections}/{queue_reload_after_retries} consecutive retries have been rejected.", started)
                         retry_button.click()
+                        _log(
+                            f"Attempt {attempt} click returned. Monitoring for another queue "
+                            "rejection or the browser download event.",
+                            started,
+                        )
                         queue_started = None
                         pending_started = None
                         last_snapshot = None
                         last_heartbeat = time.monotonic()
                         continue
-
-                    _log(
-                        f"Queue rejection is still active after {queue_retry_wait_ms / 1000:.0f}s. "
-                        "Closing the visible modal before retrying.",
-                        started,
-                    )
-                    close_button = page.locator('.modal.show button[aria-label="Close"]')
-                    if not close_button.count() or not close_button.first.is_visible():
-                        raise RuntimeError(
-                            "Spotisaver queue retry is required, but the visible modal Close "
-                            f"button was not found. Last modal state: {snapshot!r}"
-                        )
-                    close_button.first.click()
-                    _log("Clicked the modal Close button. Waiting for the modal to disappear.", started)
-
-                    modal = page.locator(".modal.show")
-                    modal_deadline = time.monotonic() + 10
-                    while modal.count() and modal.first.is_visible():
-                        if page.is_closed():
-                            raise RuntimeError("Spotisaver page closed while closing the queue modal.")
-                        if time.monotonic() >= modal_deadline:
-                            raise RuntimeError(
-                                "Spotisaver queue modal did not close after clicking Close. "
-                                f"Last modal state: {snapshot!r}"
-                            )
-                        page.wait_for_timeout(250)
-
-                    _log("Confirmed that the queue modal is closed.", started)
-                    if retry_locator is None:
-                        retry_button = _find_album_download(page)
-                        button_description = "verified 'Download entire playlist' button"
-                        button_deadline = time.monotonic() + 10
-                        while retry_button is None and time.monotonic() < button_deadline:
-                            if page.is_closed():
-                                raise RuntimeError("Spotisaver page closed before the album button could be retried.")
-                            page.wait_for_timeout(500)
-                            retry_button = _find_album_download(page)
-                    else:
-                        retry_button = retry_locator
-                        button_description = "original visible download control"
-                        button_deadline = time.monotonic() + 10
-                        while (
-                            (not retry_button.is_visible() or not retry_button.is_enabled())
-                            and time.monotonic() < button_deadline
-                        ):
-                            if page.is_closed():
-                                raise RuntimeError("Spotisaver page closed before the download control could be retried.")
-                            page.wait_for_timeout(500)
-                    if retry_button is None or not retry_button.is_visible() or not retry_button.is_enabled():
-                        _log_selector_state(page, "#downloadAllBtn")
-                        raise RuntimeError(
-                            f"Spotisaver queue modal closed, but the {button_description} "
-                            "did not become available."
-                        )
-
-                    consecutive_rejections += 1
-                    attempt += 1
-                    _log(f"Submitting Spotisaver download attempt {attempt}; {consecutive_rejections}/{queue_reload_after_retries} consecutive retries have been rejected.", started)
-                    retry_button.click()
-                    _log(
-                        f"Attempt {attempt} click returned. Monitoring for another queue "
-                        "rejection or the browser download event.",
-                        started,
-                    )
-                    queue_started = None
-                    pending_started = None
-                    last_snapshot = None
-                    last_heartbeat = time.monotonic()
-                    continue
-            # A cleared rejection ends the retry timer, but does not prove
-            # that the site accepted the request. Keep monitoring until there
-            # is positive processing evidence.
-        elif queue_started is not None:
-            progress_reporter.finish_queue_wait()
-            _log(
-                f"Spotisaver queue notice cleared during attempt {attempt}; "
-                "processing state remains unconfirmed until positive evidence appears.",
-                started,
-            )
-            queue_started = None
-
-        if snapshot:
-            if state == "accepted" and not slot_acquired:
-                if progress_reporter.queue_wait_started is not None:
-                    progress_reporter.finish_queue_wait()
-                report_stage("Download slot acquired.", "success")
-                slot_acquired = True
+                # A cleared rejection ends the retry timer, but does not prove
+                # that the site accepted the request. Keep monitoring until there
+                # is positive processing evidence.
+            elif queue_started is not None:
+                progress_reporter.finish_queue_wait()
                 _log(
-                    f"Spotisaver processing positively confirmed during attempt {attempt}.",
+                    f"Spotisaver queue notice cleared during attempt {attempt}; "
+                    "processing state remains unconfirmed until positive evidence appears.",
                     started,
                 )
-            status = snapshot.get("status", "")
-            combined_status = " ".join((status, snapshot.get("log", "")))
-            if re.search(r"creating ZIP archive", combined_status, re.I):
-                phase = "creating ZIP archive"
-            elif re.search(r"ZIP archive created", combined_status, re.I):
-                phase = "ZIP archive ready"
-            elif state == "accepted" and _parse_track_progress(snapshot) is not None:
-                phase = "downloading playlist tracks"
-            else:
-                phase = ""
-            if phase and phase != last_phase:
-                if phase == "creating ZIP archive":
-                    report_stage("Preparing archive...", "info")
-                elif phase == "ZIP archive ready":
-                    report_stage("Archive ready. Downloading...", "success")
-                elif phase == "downloading playlist tracks":
-                    report_stage("Downloading...", "info")
-                _log(f"Spotisaver phase: {phase}.", started)
-                last_phase = phase
-            if not queue_busy:
-                progress_reporter.update(snapshot, started)
-            last_snapshot = snapshot
+                queue_started = None
 
-        failure = _download_failure(snapshot)
-        if failure:
-            raise RuntimeError(f"Spotisaver reported a download failure: {failure}")
+            if snapshot:
+                if state == "accepted" and not slot_acquired:
+                    if progress_reporter.queue_wait_started is not None:
+                        progress_reporter.finish_queue_wait()
+                    report_stage("Download slot acquired.", "success")
+                    slot_acquired = True
+                    _log(
+                        f"Spotisaver processing positively confirmed during attempt {attempt}.",
+                        started,
+                    )
+                status = snapshot.get("status", "")
+                combined_status = " ".join((status, snapshot.get("log", "")))
+                if re.search(r"creating ZIP archive", combined_status, re.I):
+                    phase = "creating ZIP archive"
+                elif re.search(r"ZIP archive created", combined_status, re.I):
+                    phase = "ZIP archive ready"
+                elif state == "accepted" and _parse_track_progress(snapshot) is not None:
+                    phase = "downloading playlist tracks"
+                else:
+                    phase = ""
+                if phase and phase != last_phase:
+                    if phase == "creating ZIP archive":
+                        report_stage("Preparing archive...", "info")
+                    elif phase == "ZIP archive ready":
+                        progress_reporter.update_task("Preparing archive", 100, 100)
+                        report_stage("Archive ready. Downloading...", "success")
+                    elif phase == "downloading playlist tracks":
+                        report_stage("Downloading...", "info")
+                    _log(f"Spotisaver phase: {phase}.", started)
+                    last_phase = phase
+                if not queue_busy:
+                    if phase == "creating ZIP archive":
+                        archive_progress = _parse_track_progress(snapshot)
+                        if archive_progress is not None:
+                            progress_reporter.update_task("Preparing archive", archive_progress[2], 100)
+                    elif phase != "ZIP archive ready":
+                        progress_reporter.update(snapshot, started)
+                last_snapshot = snapshot
 
-        if (
-            not zip_button_clicked
-            and re.search(r"ZIP archive created", " ".join((snapshot.get("status", ""), snapshot.get("log", ""))), re.I)
-        ):
-            progress_reporter.finish()
-            try:
-                zip_button = _find_zip_download_button(page)
-            except RuntimeError as exc:
-                _log(f"ZIP button discovery failed: {exc}", started)
-                _log(f"Last modal snapshot: {snapshot!r}", started)
-                raise
-            if zip_button is None:
-                _log("ZIP archive is ready, but no unique visible enabled 'Download ZIP' button was found.", started)
-                _log(f"Last modal snapshot: {snapshot!r}", started)
+            failure = _download_failure(snapshot)
+            if failure:
+                raise RuntimeError(f"Spotisaver reported a download failure: {failure}")
+
+            if (
+                not zip_button_clicked
+                and re.search(r"ZIP archive created", " ".join((snapshot.get("status", ""), snapshot.get("log", ""))), re.I)
+            ):
+                progress_reporter.finish()
                 try:
-                    _log_visible_download_controls(page)
-                except Exception as diagnostic_error:
-                    _log(f"Could not inventory visible controls: {diagnostic_error}", started)
-                raise RuntimeError(
-                    "Spotisaver created the ZIP archive, but its visible enabled Download ZIP button "
-                    "could not be identified. Please provide the live modal button HTML and the "
-                    f"visible-control diagnostics. Modal: {snapshot!r}"
-                )
-            _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
-            try:
-                cdp = page.context.browser.new_browser_cdp_session()
-                target_infos = cdp.send("Target.getTargets").get("targetInfos", [])
-                page_target = next(
-                    (
-                        info for info in target_infos
-                        if info.get("type") == "page" and info.get("url") == page.url
-                    ),
-                    None,
-                )
-                browser_context_id = page_target.get("browserContextId") if page_target else None
-                if not browser_context_id:
-                    raise RuntimeError("Could not identify the Chromium browser context for the Spotisaver page.")
-                cdp.send("Browser.setDownloadBehavior", {
-                    "behavior": "allow",
-                    "downloadPath": str(target.resolve()),
-                    "eventsEnabled": True,
-                    "browserContextId": browser_context_id,
-                })
-                cdp_available = True
-
-                def on_download_will_begin(event: dict[str, Any]) -> None:
-                    nonlocal cdp_download_guid
-                    if not cdp_download_started:
-                        return
-                    if cdp_download_guid is None:
-                        cdp_download_guid = str(event.get("guid", "")) or None
-                        _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
-
-                def on_download_progress(event: dict[str, Any]) -> None:
-                    nonlocal cdp_progress_seen
-                    if not cdp_download_started or not cdp_download_guid:
-                        return
-                    if str(event.get("guid", "")) != cdp_download_guid:
-                        return
-                    cdp_progress_seen = True
-                    received = int(event.get("receivedBytes", 0) or 0)
-                    total_value = event.get("totalBytes")
+                    zip_button = _find_zip_download_button(page)
+                except RuntimeError as exc:
+                    _log(f"ZIP button discovery failed: {exc}", started)
+                    _log(f"Last modal snapshot: {snapshot!r}", started)
+                    raise
+                if zip_button is None:
+                    _log("ZIP archive is ready, but no unique visible enabled 'Download ZIP' button was found.", started)
+                    _log(f"Last modal snapshot: {snapshot!r}", started)
                     try:
-                        total_number = float(total_value)
-                        total = int(total_number) if total_number > 0 else None
-                    except (TypeError, ValueError, OverflowError):
-                        total = None
-                    progress_reporter.update_transfer(received, total)
-                    if event.get("state") == "completed":
-                        progress_reporter.finish()
-                        report_stage("ZIP transfer complete. Validating archive...", "success")
-                    elif event.get("state") == "canceled":
-                        _log("Chromium reported that the ZIP transfer was canceled.", started)
+                        _log_visible_download_controls(page)
+                    except Exception as diagnostic_error:
+                        _log(f"Could not inventory visible controls: {diagnostic_error}", started)
+                    raise RuntimeError(
+                        "Spotisaver created the ZIP archive, but its visible enabled Download ZIP button "
+                        "could not be identified. Please provide the live modal button HTML and the "
+                        f"visible-control diagnostics. Modal: {snapshot!r}"
+                    )
+                _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
+                try:
+                    cdp = page.context.browser.new_browser_cdp_session()
+                    target_infos = cdp.send("Target.getTargets").get("targetInfos", [])
+                    page_target = next(
+                        (
+                            info for info in target_infos
+                            if info.get("type") == "page" and info.get("url") == page.url
+                        ),
+                        None,
+                    )
+                    browser_context_id = page_target.get("browserContextId") if page_target else None
+                    if not browser_context_id:
+                        raise RuntimeError("Could not identify the Chromium browser context for the Spotisaver page.")
+                    cdp.send("Browser.setDownloadBehavior", {
+                        "behavior": "allow",
+                        "downloadPath": str(target.resolve()),
+                        "eventsEnabled": True,
+                        "browserContextId": browser_context_id,
+                    })
+                    cdp_available = True
 
-                cdp.on("Browser.downloadWillBegin", on_download_will_begin)
-                cdp.on("Browser.downloadProgress", on_download_progress)
-                _log("Chromium DevTools download progress events enabled.", started)
-            except Exception as exc:
-                cdp = None
-                cdp_available = False
-                _log(f"Chromium download progress events unavailable: {type(exc).__name__}: {exc}", started)
-            cdp_download_started = True
-            if cdp_available:
-                report_stage("Downloading ZIP...", "info")
-            else:
-                report_stage("ZIP transfer progress unavailable. Waiting for browser download...", "muted")
+                    def on_download_will_begin(event: dict[str, Any]) -> None:
+                        nonlocal cdp_download_guid
+                        if not cdp_download_started:
+                            return
+                        if cdp_download_guid is None:
+                            cdp_download_guid = str(event.get("guid", "")) or None
+                            _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
+
+                    def on_download_progress(event: dict[str, Any]) -> None:
+                        nonlocal cdp_progress_seen, cdp_download_completed
+                        if not cdp_download_started or not cdp_download_guid:
+                            return
+                        if str(event.get("guid", "")) != cdp_download_guid:
+                            return
+                        cdp_progress_seen = True
+                        received = int(event.get("receivedBytes", 0) or 0)
+                        total_value = event.get("totalBytes")
+                        try:
+                            total_number = float(total_value)
+                            total = int(total_number) if total_number > 0 else None
+                        except (TypeError, ValueError, OverflowError):
+                            total = None
+                        if event.get("state") == "completed":
+                            cdp_download_completed = True
+                            progress_reporter.finish_transfer(received, total)
+                            progress_reporter.finish()
+                            report_stage("ZIP transfer complete. Validating archive...", "success")
+                        elif event.get("state") == "canceled":
+                            _log("Chromium reported that the ZIP transfer was canceled.", started)
+                        else:
+                            progress_reporter.update_transfer(received, total)
+
+                    cdp.on("Browser.downloadWillBegin", on_download_will_begin)
+                    cdp.on("Browser.downloadProgress", on_download_progress)
+                    _log("Chromium DevTools download progress events enabled.", started)
+                except Exception as exc:
+                    if cdp is not None:
+                        try:
+                            cdp.detach()
+                        except Exception:
+                            pass
+                    cdp = None
+                    cdp_available = False
+                    _log(f"Chromium download progress events unavailable: {type(exc).__name__}: {exc}", started)
+                cdp_download_started = True
+                if cdp_available:
+                    report_stage("Downloading ZIP...", "info")
+                else:
+                    report_stage("ZIP transfer progress unavailable. Waiting for browser download...", "muted")
+                try:
+                    zip_button.click()
+                except Exception as exc:
+                    _log(f"Download ZIP button click failed: {type(exc).__name__}: {exc}", started)
+                    if cdp is not None:
+                        try:
+                            cdp.detach()
+                        except Exception:
+                            pass
+                    raise
+                zip_button_clicked = True
+                last_phase = "ZIP download requested"
+                _log("Download ZIP click returned. Waiting for the browser download event.", started)
+
+            now = time.monotonic()
+            if now - last_heartbeat >= 15:
+                status = snapshot.get("status", "") if snapshot else ""
+                summary = f" Current status: {status[:160]!r}." if status else ""
+                _log(
+                    f"Still waiting for Spotisaver's browser download event "
+                    f"({now - started:.0f}s elapsed).{summary}",
+                    started,
+                )
+                last_heartbeat = now
+            page.wait_for_timeout(1_000)
+
+        if progress_reporter.queue_wait_started is not None:
+            progress_reporter.finish_queue_wait()
+        progress_reporter.finish()
+        _log(f"Browser download event received during attempt {attempt}.", started)
+        download = download_events[0]
+        suggested = Path(download.suggested_filename).name
+        destination = target / suggested
+        _log(f"Website suggested filename: {suggested!r}")
+    except BaseException:
+        if cdp is not None:
             try:
-                zip_button.click()
-            except Exception as exc:
-                _log(f"Download ZIP button click failed: {type(exc).__name__}: {exc}", started)
-                raise
-            zip_button_clicked = True
-            last_phase = "ZIP download requested"
-            _log("Download ZIP click returned. Waiting for the browser download event.", started)
-
-        now = time.monotonic()
-        if now - last_heartbeat >= 15:
-            status = snapshot.get("status", "") if snapshot else ""
-            summary = f" Current status: {status[:160]!r}." if status else ""
-            _log(
-                f"Still waiting for Spotisaver's browser download event "
-                f"({now - started:.0f}s elapsed).{summary}",
-                started,
-            )
-            last_heartbeat = now
-        page.wait_for_timeout(1_000)
-
-    if progress_reporter.queue_wait_started is not None:
-        progress_reporter.finish_queue_wait()
-    progress_reporter.finish()
-    _log(f"Browser download event received during attempt {attempt}.", started)
-    download = download_events[0]
-    suggested = Path(download.suggested_filename).name
-    destination = target / suggested
-    _log(f"Website suggested filename: {suggested!r}")
-    _log(f"Saving browser download to: {destination}")
-    try:
-        download.save_as(str(destination))
-    except Exception as exc:
-        _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
+                cdp.detach()
+            except Exception:
+                pass
         raise
+
+    try:
+        if cdp_available and cdp_download_guid is not None:
+            _log(f"Chromium owns ZIP persistence. Waiting for completed file: {destination}", started)
+            deadline = time.monotonic() + 30
+            while not cdp_download_completed and time.monotonic() < deadline:
+                page.wait_for_timeout(250)
+            if not cdp_download_completed:
+                raise RuntimeError("Chromium started the ZIP transfer but did not report completion within 30 seconds.")
+            previous_size = -1
+            stable_checks = 0
+            while time.monotonic() < deadline:
+                if destination.is_file():
+                    size_now = destination.stat().st_size
+                    if size_now > 0 and size_now == previous_size:
+                        stable_checks += 1
+                        if stable_checks >= 2:
+                            break
+                    else:
+                        stable_checks = 0
+                    previous_size = size_now
+                page.wait_for_timeout(250)
+            else:
+                raise RuntimeError(
+                    "Chromium reported ZIP transfer completion, but its download file did not "
+                    f"become non-empty and stable within 30 seconds: {destination}"
+                )
+        else:
+            _log(f"Saving browser download through Playwright to: {destination}")
+            try:
+                download.save_as(str(destination))
+            except Exception as exc:
+                _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
+                raise
     finally:
         if cdp is not None:
             try:
@@ -1231,6 +1361,7 @@ def download_and_import(
             episode_number=episode_number,
             episode_title=episode_title,
             album_title=plan.get("spotify_album_title"),
+            progress_callback=report_progress,
         )
         report_stage(f"All {len(tracks)} tracks validated.", "success")
         return tracks

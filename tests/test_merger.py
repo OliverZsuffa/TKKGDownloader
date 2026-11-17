@@ -60,12 +60,17 @@ class SafeMergeIntegrationTests(unittest.TestCase):
             self._make_track(second, 44100, 660)
             output = root / "merged.mp3"
             details: dict = {}
+            progress: list[tuple[str, int, int]] = []
 
-            merge_tracks([first, second], output, ffmpeg=FFMPEG, ffprobe=FFPROBE,
-                         diagnostics=details)
+            merge_tracks(
+                [first, second], output, ffmpeg=FFMPEG, ffprobe=FFPROBE,
+                diagnostics=details,
+                progress_callback=lambda label, current, total: progress.append((label, current, total)),
+            )
 
             self.assertTrue(output.is_file())
             self.assertEqual(details["selected_method"], "stream_copy")
+            self.assertTrue(any(label == "Merging audio" and current == 100 for label, current, _ in progress))
             self.assertTrue(details["attempts"][0]["decode_valid"])
             self.assertLessEqual(
                 abs(details["attempts"][0]["duration_difference_seconds"]),
@@ -92,7 +97,7 @@ class SafeMergeIntegrationTests(unittest.TestCase):
             output = root / "merged.mp3"
             details: dict = {}
 
-            def write_wrong_stream_copy(tracks, concat_file, temporary_output, ffmpeg):
+            def write_wrong_stream_copy(tracks, concat_file, temporary_output, ffmpeg, **kwargs):
                 shutil.copyfile(wrong, temporary_output)
                 return {"command": ["synthetic"], "returncode": 0, "stdout": "", "stderr": ""}
 
