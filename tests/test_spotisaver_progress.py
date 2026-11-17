@@ -262,6 +262,7 @@ class SpotisaverProgressTests(unittest.TestCase):
             self.assertEqual(result.name, "album.zip")
             self.assertEqual(result.read_bytes(), b"verified archive")
             self.assertIn("Archive ready. Downloading...", output.getvalue())
+            self.assertIn("ZIP transfer progress unavailable", output.getvalue())
             self.assertNotIn("Clicking the verified Download ZIP button", output.getvalue())
             self.assertNotIn("Browser download event received", output.getvalue())
 
