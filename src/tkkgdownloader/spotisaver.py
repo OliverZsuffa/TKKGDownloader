@@ -524,6 +524,11 @@ def _download_click(
     attempt = 1
     zip_button_clicked = False
     last_phase = ""
+    cdp = None
+    cdp_available = False
+    cdp_download_guid: str | None = None
+    cdp_download_started = False
+    expected_zip_url = ""
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -738,6 +743,57 @@ def _download_click(
                 )
             _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
             try:
+                expected_zip_url = zip_button.get_attribute("href") or ""
+            except Exception:
+                expected_zip_url = ""
+            try:
+                cdp = page.context.new_cdp_session(page)
+                cdp.send("Browser.setDownloadBehavior", {
+                    "behavior": "allow",
+                    "downloadPath": str(target.resolve()),
+                    "eventsEnabled": True,
+                })
+                cdp_available = True
+
+                def on_download_will_begin(event: dict[str, Any]) -> None:
+                    nonlocal cdp_download_guid
+                    if not cdp_download_started:
+                        return
+                    event_url = str(event.get("url", ""))
+                    if expected_zip_url.startswith("http") and event_url and event_url != expected_zip_url:
+                        return
+                    if cdp_download_guid is None:
+                        cdp_download_guid = str(event.get("guid", "")) or None
+                        _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
+
+                def on_download_progress(event: dict[str, Any]) -> None:
+                    if not cdp_download_started or not cdp_download_guid:
+                        return
+                    if str(event.get("guid", "")) != cdp_download_guid:
+                        return
+                    received = int(event.get("receivedBytes", 0) or 0)
+                    total_value = event.get("totalBytes")
+                    total = int(total_value) if total_value is not None and float(total_value) > 0 else None
+                    progress_reporter.update_transfer(received, total)
+                    if event.get("state") == "completed":
+                        progress_reporter.finish()
+                        report_stage("ZIP transfer complete. Validating archive...", "success")
+                    elif event.get("state") == "canceled":
+                        _log("Chromium reported that the ZIP transfer was canceled.", started)
+
+                cdp.on("Browser.downloadWillBegin", on_download_will_begin)
+                cdp.on("Browser.downloadProgress", on_download_progress)
+                _log("Chromium DevTools download progress events enabled.", started)
+            except Exception as exc:
+                cdp = None
+                cdp_available = False
+                _log(f"Chromium download progress events unavailable: {type(exc).__name__}: {exc}", started)
+            cdp_download_started = True
+            if cdp_available:
+                report_stage("Downloading ZIP...", "info")
+            else:
+                report_stage("ZIP transfer progress unavailable. Waiting for browser download...", "muted")
+            try:
                 zip_button.click()
             except Exception as exc:
                 _log(f"Download ZIP button click failed: {type(exc).__name__}: {exc}", started)
@@ -761,6 +817,11 @@ def _download_click(
     if progress_reporter.queue_wait_started is not None:
         progress_reporter.finish_queue_wait()
     progress_reporter.finish()
+    if cdp is not None:
+        try:
+            cdp.detach()
+        except Exception:
+            pass
     _log(f"Browser download event received during attempt {attempt}.", started)
     download = download_events[0]
     suggested = Path(download.suggested_filename).name
