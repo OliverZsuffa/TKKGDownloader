@@ -179,7 +179,7 @@ class SpotisaverDownloadControlTests(unittest.TestCase):
 class SpotisaverCliTests(unittest.TestCase):
     def test_provider_is_opt_in(self):
         args = build_parser().parse_args(["150"])
-        self.assertEqual(args.provider, "yt-dlp")
+        self.assertIsNone(args.provider)
 
     def test_spotisaver_provider_can_be_selected(self):
         args = build_parser().parse_args(["150", "--provider", "spotisaver"])

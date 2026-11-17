@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from unittest.mock import patch
 
+import tkkgdownloader.spotisaver as spotisaver_module
+
 from tkkgdownloader.spotisaver import (
     _find_zip_download_button,
     _format_eta,
@@ -15,6 +17,7 @@ from tkkgdownloader.spotisaver import (
     _render_progress_bar,
     _download_click,
     _ProgressReporter,
+    _browser_launch_options,
 )
 
 
@@ -135,6 +138,7 @@ class SpotisaverProgressTests(unittest.TestCase):
         self.assertEqual(_format_eta({"eta_minutes": "1", "eta_seconds": "32"}), "1m 32s")
         self.assertEqual(_format_eta({"eta_minutes": "0", "eta_seconds": "8"}), "8s")
         self.assertEqual(_format_eta({"eta_minutes": "", "eta_seconds": "42"}), "42s")
+        self.assertEqual(_format_eta({"eta_minutes": "2m", "eta_seconds": "05s"}), "2m 05s")
         self.assertEqual(_format_eta({"eta": "Estimated time: 42s"}), "42s")
         self.assertEqual(_format_eta({"eta": "Estimated time: 1m 05s"}), "1m 05s")
         self.assertIsNone(_format_eta({"eta_minutes": "1", "eta_seconds": "75"}))
@@ -175,6 +179,240 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.finish_queue_wait()
         self.assertEqual(output.getvalue().count("\r"), 1)
         self.assertEqual(output.getvalue().count("\n"), 1)
+
+    def test_browser_launch_defaults_to_headless_and_muted(self):
+        self.assertEqual(_browser_launch_options(), {
+            "headless": True,
+            "args": ["--mute-audio"],
+        })
+
+    def test_browser_launch_overrides_are_independent(self):
+        self.assertEqual(_browser_launch_options(show_browser=True), {
+            "headless": False,
+            "args": ["--mute-audio"],
+        })
+        self.assertEqual(_browser_launch_options(mute_browser_audio=False), {
+            "headless": True,
+        })
+
+    def test_transfer_progress_formats_known_and_unknown_totals(self):
+        reporter = _ProgressReporter()
+        reporter.interactive = False
+        reporter.last_report = 0
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            reporter.update_transfer(12_400_000, 25_800_000)
+            reporter.last_report = 0
+            reporter.update_transfer(12_400_000, None)
+        lines = output.getvalue().splitlines()
+        self.assertIn("48%", lines[0])
+        self.assertIn("11.8 MB / 24.6 MB", lines[0])
+        self.assertIn("11.8 MB received", lines[1])
+        self.assertNotIn("%", lines[1])
+
+    def test_interactive_progress_clears_longer_previous_line(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+        output = TTY()
+        with contextlib.redirect_stdout(output):
+            reporter = _ProgressReporter()
+            reporter.update({"status": "Downloaded 40 of 40 tracks", "progress": "100%"}, 0)
+            reporter.update({"status": "Downloaded 1 of 40 tracks", "progress": "3%"}, 0)
+        self.assertGreaterEqual(output.getvalue().count("\r"), 2)
+
+    def test_track_phase_message_precedes_its_first_progress_update(self):
+        class Reporter:
+            def __init__(self):
+                self.queue_wait_started = None
+                self.events = []
+            def stage(self, message, tone="info"):
+                self.events.append(("stage", message))
+            def start_queue_wait(self):
+                self.queue_wait_started = 0
+            def update_queue_wait(self):
+                pass
+            def finish_queue_wait(self):
+                self.queue_wait_started = None
+                return 0
+            def update(self, snapshot, started):
+                self.events.append(("update", snapshot.get("status", "")))
+            def finish(self):
+                pass
+            def update_transfer(self, received, total):
+                pass
+
+        class Page(FakePage):
+            def __init__(self, snapshot, zip_button):
+                super().__init__(snapshot, zip_button)
+                self.polls = 0
+            def evaluate(self, script):
+                return self.snapshot
+            def wait_for_timeout(self, timeout):
+                self.polls += 1
+                if self.polls == 1:
+                    self.snapshot = {
+                        "status": "ZIP archive created.",
+                        "log": "",
+                        "failed": "",
+                        "progress": "100 100%",
+                        "eta": "",
+                        "eta_template": "",
+                        "eta_minutes": "",
+                        "eta_seconds": "",
+                        "controls": '[{"text":"Download ZIP"}]',
+                    }
+                elif self.zip_button.clicked and not getattr(self, "download_sent", False):
+                    self.download_sent = True
+                    self.events["download"](FakeDownload())
+
+        reporter = Reporter()
+        zip_button = FakeButton("Download ZIP")
+        page = Page({
+            "status": "Downloaded 1 of 40 tracks",
+            "log": "",
+            "failed": "",
+            "progress": "2 2%",
+            "eta": "",
+            "eta_template": "",
+            "eta_minutes": "",
+            "eta_seconds": "",
+            "controls": "[]",
+        }, zip_button)
+
+        class AlbumButton:
+            def click(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(
+            spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", reporter
+        ):
+            _download_click(page, AlbumButton(), Path(temp))
+
+        stage_index = reporter.events.index(("stage", "Downloading..."))
+        first_progress_index = next(
+            index for index, event in enumerate(reporter.events)
+            if event[0] == "update" and event[1] == "Downloaded 1 of 40 tracks"
+        )
+        self.assertLess(stage_index, first_progress_index)
+
+    def test_cdp_progress_tracks_only_the_zip_download_guid(self):
+        class Reporter:
+            def __init__(self):
+                self.queue_wait_started = None
+                self.transfer_updates = []
+            def stage(self, message, tone="info"):
+                pass
+            def start_queue_wait(self):
+                self.queue_wait_started = 0
+            def update_queue_wait(self):
+                pass
+            def finish_queue_wait(self):
+                self.queue_wait_started = None
+                return 0
+            def update(self, snapshot, started):
+                pass
+            def finish(self):
+                pass
+            def update_transfer(self, received, total):
+                self.transfer_updates.append((received, total))
+
+        class CDP:
+            def __init__(self, page):
+                self.page = page
+                self.handlers = {}
+                self.commands = []
+                self.detached = False
+            def send(self, method, params=None):
+                self.commands.append((method, params))
+                if method == "Target.getTargets":
+                    return {"targetInfos": [{
+                        "type": "page",
+                        "url": self.page.url,
+                        "browserContextId": "spotisaver-context",
+                    }]}
+                return {}
+            def on(self, event, callback):
+                self.handlers[event] = callback
+            def emit(self, event, payload):
+                self.handlers[event](payload)
+            def detach(self):
+                self.detached = True
+
+        class Download:
+            suggested_filename = "album.zip"
+            def save_as(self, path):
+                Path(path).write_bytes(b"archive")
+
+        class Page(FakePage):
+            def __init__(self, snapshot, zip_button):
+                super().__init__(snapshot, zip_button)
+                self.url = "https://spotisaver.net/en/album/example/"
+                self.cdp = CDP(self)
+                self.context = type("Context", (), {})()
+                self.context.browser = type(
+                    "Browser", (), {"new_browser_cdp_session": lambda browser: self.cdp}
+                )()
+            def wait_for_timeout(self, timeout):
+                if self.zip_button.clicked and not getattr(self, "download_sent", False):
+                    self.download_sent = True
+                    self.events["download"](Download())
+
+        reporter = Reporter()
+        zip_button = FakeButton("Download ZIP")
+        def emit_download_events():
+            page.cdp.emit("Browser.downloadWillBegin", {
+                "guid": "zip-guid",
+                "url": "https://cdn.example/album.zip",
+                "suggestedFilename": "album.zip",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "unrelated-guid",
+                "receivedBytes": 1000,
+                "totalBytes": 1000,
+                "state": "completed",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "zip-guid",
+                "receivedBytes": 500,
+                "totalBytes": 1000,
+                "state": "inProgress",
+            })
+            page.cdp.emit("Browser.downloadProgress", {
+                "guid": "zip-guid",
+                "receivedBytes": 1000,
+                "totalBytes": 1000,
+                "state": "completed",
+            })
+        zip_button.on_click = emit_download_events
+        page = Page({
+            "status": "ZIP archive created.",
+            "log": "",
+            "failed": "",
+            "progress": "100 100%",
+            "eta": "",
+            "eta_template": "",
+            "eta_minutes": "",
+            "eta_seconds": "",
+            "controls": '[{"text":"Download ZIP"}]',
+        }, zip_button)
+        class AlbumButton:
+            def click(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(
+            spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", reporter
+        ):
+            result = _download_click(page, AlbumButton(), Path(temp))
+
+        self.assertEqual(result.name, "album.zip")
+        self.assertEqual(reporter.transfer_updates, [(500, 1000), (1000, 1000)])
+        behavior = next(
+            params for method, params in page.cdp.commands
+            if method == "Browser.setDownloadBehavior"
+        )
+        self.assertEqual(behavior["browserContextId"], "spotisaver-context")
+        self.assertTrue(page.cdp.detached)
 
     def test_finds_unique_visible_enabled_zip_button(self):
         button = FakeButton("Download ZIP")
@@ -219,6 +457,7 @@ class SpotisaverProgressTests(unittest.TestCase):
             self.assertEqual(result.name, "album.zip")
             self.assertEqual(result.read_bytes(), b"verified archive")
             self.assertIn("Archive ready. Downloading...", output.getvalue())
+            self.assertIn("ZIP transfer progress unavailable", output.getvalue())
             self.assertNotIn("Clicking the verified Download ZIP button", output.getvalue())
             self.assertNotIn("Browser download event received", output.getvalue())
 

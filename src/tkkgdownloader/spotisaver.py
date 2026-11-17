@@ -18,6 +18,14 @@ from .audio_import import import_audio_files
 SPOTISAVER_ALBUM_URL = "https://spotisaver.net/en/album/{album_id}/"
 
 
+def _browser_launch_options(*, show_browser: bool = False, mute_browser_audio: bool = True) -> dict[str, Any]:
+    """Build explicit Chromium launch options for the Spotisaver workflow."""
+    options: dict[str, Any] = {"headless": not show_browser}
+    if mute_browser_audio:
+        options["args"] = ["--mute-audio"]
+    return options
+
+
 def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return re.sub(r"[^a-z0-9]+", "", value)
@@ -51,6 +59,7 @@ class _ProgressReporter:
         )
         self.active_line = False
         self.last_line: str | None = None
+        self.last_visible_length = 0
         self.last_report = time.monotonic()
         self.queue_wait_started: float | None = None
         self.queue_wait_last_line: str | None = None
@@ -80,9 +89,12 @@ class _ProgressReporter:
         if self.interactive:
             if line == self.last_line:
                 return
-            print("\r" + line, end="", flush=True)
+            visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible_line))
+            print("\r" + line + padding, end="", flush=True)
             self.active_line = True
             self.last_line = line
+            self.last_visible_length = len(visible_line)
         elif time.monotonic() - self.last_report >= 15 and line != self.last_line:
             print(line, flush=True)
             self.last_report = time.monotonic()
@@ -100,9 +112,11 @@ class _ProgressReporter:
         line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
         if self.interactive:
             if line != self.queue_wait_last_line:
-                print("\r" + line, end="", flush=True)
+                padding = " " * max(0, self.last_visible_length - len(line))
+                print("\r" + line + padding, end="", flush=True)
                 self.active_line = True
                 self.queue_wait_last_line = line
+                self.last_visible_length = len(line)
 
     def finish_queue_wait(self) -> float:
         if self.queue_wait_started is None:
@@ -124,6 +138,41 @@ class _ProgressReporter:
         if self.active_line:
             print(flush=True)
             self.active_line = False
+            self.last_visible_length = 0
+            self.last_line = None
+            self.queue_wait_last_line = None
+
+    def update_transfer(self, received: int, total: int | None) -> None:
+        received = max(0, int(received))
+        total = int(total) if total is not None and int(total) > 0 else None
+        received_text = _format_bytes(received)
+        if total is None:
+            line = f"Downloading ZIP... {received_text} received"
+        else:
+            percentage = min(100, round(received * 100 / total))
+            filled = round(20 * percentage / 100)
+            bar = "█" * filled + "░" * (20 - filled)
+            line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
+        if self.colour and total is not None:
+            line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        if self.interactive:
+            visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible_line))
+            print("\r" + line + padding, end="", flush=True)
+            self.active_line = True
+            self.last_visible_length = len(visible_line)
+        elif time.monotonic() - self.last_report >= 1:
+            print(line, flush=True)
+            self.last_report = time.monotonic()
+
+
+def _format_bytes(value: int) -> str:
+    amount = float(max(0, value))
+    for unit in ("B", "KB", "MB", "GB"):
+        if amount < 1024 or unit == "GB":
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{amount:.1f} GB"
 
 
 def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logger, Path]:
@@ -233,7 +282,10 @@ def _read_download_modal(page: Any) -> dict[str, str]:
             const etaPart = (name) => {
                 if (!etaVisible) return "";
                 const element = eta.querySelector('[data-eta-part="' + name + '"]');
-                return element ? (element.innerText || element.textContent || "").trim() : "";
+                if (!element) return "";
+                const text = (element.innerText || element.textContent || "").trim();
+                const match = text.match(/\\d+/);
+                return match ? match[0] : "";
             };
             const retryControls = Array.from(
                 document.querySelectorAll(".modal.show button, .modal.show a")
@@ -283,10 +335,15 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
     raw_seconds = snapshot.get("eta_seconds", "").strip()
     try:
         if raw_seconds:
-            minutes = int(raw_minutes or "0")
-            seconds = int(raw_seconds)
+            minute_match = re.search(r"\d+", raw_minutes)
+            second_match = re.search(r"\d+", raw_seconds)
+            if not second_match:
+                return None
+            minutes = int(minute_match.group(0)) if minute_match else 0
+            seconds = int(second_match.group(0))
         else:
-            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", snapshot.get("eta", ""), re.I)
+            eta_text = re.sub(r"\s+", " ", snapshot.get("eta", "").strip())
+            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", eta_text, re.I)
             if not match:
                 return None
             minutes = int(match.group(1) or "0")
@@ -475,6 +532,11 @@ def _download_click(
     attempt = 1
     zip_button_clicked = False
     last_phase = ""
+    cdp = None
+    cdp_available = False
+    cdp_download_guid: str | None = None
+    cdp_download_started = False
+    cdp_progress_seen = False
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -637,8 +699,6 @@ def _download_click(
                     f"Spotisaver processing positively confirmed during attempt {attempt}.",
                     started,
                 )
-            if not queue_busy:
-                progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
             combined_status = " ".join((status, snapshot.get("log", "")))
             if re.search(r"creating ZIP archive", combined_status, re.I):
@@ -658,6 +718,8 @@ def _download_click(
                     report_stage("Downloading...", "info")
                 _log(f"Spotisaver phase: {phase}.", started)
                 last_phase = phase
+            if not queue_busy:
+                progress_reporter.update(snapshot, started)
             last_snapshot = snapshot
 
         failure = _download_failure(snapshot)
@@ -688,6 +750,68 @@ def _download_click(
                     f"visible-control diagnostics. Modal: {snapshot!r}"
                 )
             _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
+            try:
+                cdp = page.context.browser.new_browser_cdp_session()
+                target_infos = cdp.send("Target.getTargets").get("targetInfos", [])
+                page_target = next(
+                    (
+                        info for info in target_infos
+                        if info.get("type") == "page" and info.get("url") == page.url
+                    ),
+                    None,
+                )
+                browser_context_id = page_target.get("browserContextId") if page_target else None
+                if not browser_context_id:
+                    raise RuntimeError("Could not identify the Chromium browser context for the Spotisaver page.")
+                cdp.send("Browser.setDownloadBehavior", {
+                    "behavior": "allow",
+                    "downloadPath": str(target.resolve()),
+                    "eventsEnabled": True,
+                    "browserContextId": browser_context_id,
+                })
+                cdp_available = True
+
+                def on_download_will_begin(event: dict[str, Any]) -> None:
+                    nonlocal cdp_download_guid
+                    if not cdp_download_started:
+                        return
+                    if cdp_download_guid is None:
+                        cdp_download_guid = str(event.get("guid", "")) or None
+                        _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
+
+                def on_download_progress(event: dict[str, Any]) -> None:
+                    nonlocal cdp_progress_seen
+                    if not cdp_download_started or not cdp_download_guid:
+                        return
+                    if str(event.get("guid", "")) != cdp_download_guid:
+                        return
+                    cdp_progress_seen = True
+                    received = int(event.get("receivedBytes", 0) or 0)
+                    total_value = event.get("totalBytes")
+                    try:
+                        total_number = float(total_value)
+                        total = int(total_number) if total_number > 0 else None
+                    except (TypeError, ValueError, OverflowError):
+                        total = None
+                    progress_reporter.update_transfer(received, total)
+                    if event.get("state") == "completed":
+                        progress_reporter.finish()
+                        report_stage("ZIP transfer complete. Validating archive...", "success")
+                    elif event.get("state") == "canceled":
+                        _log("Chromium reported that the ZIP transfer was canceled.", started)
+
+                cdp.on("Browser.downloadWillBegin", on_download_will_begin)
+                cdp.on("Browser.downloadProgress", on_download_progress)
+                _log("Chromium DevTools download progress events enabled.", started)
+            except Exception as exc:
+                cdp = None
+                cdp_available = False
+                _log(f"Chromium download progress events unavailable: {type(exc).__name__}: {exc}", started)
+            cdp_download_started = True
+            if cdp_available:
+                report_stage("Downloading ZIP...", "info")
+            else:
+                report_stage("ZIP transfer progress unavailable. Waiting for browser download...", "muted")
             try:
                 zip_button.click()
             except Exception as exc:
@@ -723,6 +847,14 @@ def _download_click(
     except Exception as exc:
         _log(f"SAVE FAILED for {destination}: {type(exc).__name__}: {exc}", started)
         raise
+    finally:
+        if cdp is not None:
+            try:
+                cdp.detach()
+            except Exception:
+                pass
+    if cdp_available and not cdp_progress_seen:
+        report_stage("ZIP downloaded. Chromium did not expose transfer progress.", "muted")
     if not destination.is_file():
         raise RuntimeError(f"Browser download did not create the expected file: {destination}")
     size = destination.stat().st_size
@@ -845,7 +977,14 @@ def _find_track_download(page: Any, title: str) -> Any | None:
     return None
 
 
-def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int = 120_000) -> list[Path]:
+def download_from_spotisaver(
+    plan: dict,
+    destination: Path,
+    *,
+    timeout_ms: int = 120_000,
+    show_browser: bool = False,
+    mute_browser_audio: bool = True,
+) -> list[Path]:
     """Download one album through the normal visible website interface."""
     try:
         from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -866,13 +1005,20 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
     _log(f"Workflow started for {plan.get('spotify_album_title', 'unknown album')!r}.", workflow_started)
     _log(f"Destination directory: {destination}", workflow_started)
     report_stage("Opening browser...", "info")
-    _log(f"Launching visible Chromium for {url}", workflow_started)
+    visibility = "visible" if show_browser else "headless"
+    _log(
+        f"Launching {visibility} Chromium for {url}; browser audio muted={mute_browser_audio}.",
+        workflow_started,
+    )
 
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=False)
+            browser = playwright.chromium.launch(**_browser_launch_options(
+                show_browser=show_browser,
+                mute_browser_audio=mute_browser_audio,
+            ))
             report_stage("Browser opened.", "success")
-            _log("Visible Chromium launched successfully.", workflow_started)
+            _log(f"{visibility.capitalize()} Chromium launched successfully.", workflow_started)
             page = browser.new_page(accept_downloads=True)
             try:
                 stage = "page navigation"
@@ -964,7 +1110,7 @@ def download_from_spotisaver(plan: dict, destination: Path, *, timeout_ms: int =
                 _log(f"All {len(files)} individual track downloads completed.", workflow_started)
                 return files
             finally:
-                _log("Closing visible Chromium browser.", workflow_started)
+                _log("Closing Chromium browser.", workflow_started)
                 browser.close()
     except PlaywrightTimeoutError as exc:
         _log(
@@ -1003,6 +1149,8 @@ def download_and_import(
     episode_number: int | None = None,
     episode_title: str | None = None,
     manifest_out: dict | None = None,
+    show_browser: bool = False,
+    mute_browser_audio: bool = True,
 ) -> list[Path]:
     """Download, validate, and import an album while retaining per-run diagnostics."""
     global _ACTIVE_DIAGNOSTIC_LOGGER, _ACTIVE_PROGRESS_REPORTER
@@ -1022,7 +1170,12 @@ def download_and_import(
     try:
         downloads = work_dir / "spotisaver-downloads"
         downloads.mkdir(parents=True, exist_ok=True)
-        files = download_from_spotisaver(plan, downloads)
+        files = download_from_spotisaver(
+            plan,
+            downloads,
+            show_browser=show_browser,
+            mute_browser_audio=mute_browser_audio,
+        )
         if files and all(path.suffix.lower() == ".zip" for path in files):
             report_stage("Archive downloaded. Validating tracks...", "info")
         else:
