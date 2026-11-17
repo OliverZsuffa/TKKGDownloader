@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import ConfigurationError, load_config
+from .config import ConfigurationError, load_config, resolve_settings
 from .downloader import download_episode, download_episode_spotisaver
 from .episodes import fetch_catalog, get_episode
 
@@ -63,10 +63,11 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    provider = args.provider or config.get("default_provider", "yt-dlp")
-    output_dir = args.output_dir or Path(config.get("output_dir", "output"))
-    show_browser = args.show_browser if args.show_browser is not None else config.get("show_browser", False)
-    mute_browser_audio = not args.unmute_browser if args.unmute_browser is not None else config.get("mute_browser_audio", True)
+    settings = resolve_settings(args, config)
+    provider = settings["provider"]
+    output_dir = settings["output_dir"]
+    show_browser = settings["show_browser"]
+    mute_browser_audio = settings["mute_browser_audio"]
 
     if args.diagnostic_dir is not None and provider != "spotisaver":
         print("ERROR: --diagnostic-dir requires --provider spotisaver.", file=sys.stderr)
