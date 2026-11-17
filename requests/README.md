@@ -14,18 +14,13 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [020: Configurable Spotisaver queue retries and page reload](020-spotisaver-queue-reload-retries/request.md) — configure the queue retry interval and reload the album page after repeated unsuccessful retries.
 - [019: Spotisaver browser experience and downloader defaults](019-spotisaver-browser-and-defaults/request.md) — fix progress output, show actual ZIP transfer progress when Chromium exposes it, run Chromium headlessly and muted by default, and add optional user-level TOML settings.
-
 - [018: Validate Spotisaver download slot acquisition](018-spotisaver-slot-state-validation/request.md) — distinguish an explicit queue rejection, an unconfirmed state, and positive evidence that processing has started.
-
 - [016: Safe audio merging and introductory track diagnostics](016-safe-audio-merging/request.md) — validate source formats and output duration, use PCM fallback when needed, and assess the introductory segment separately.
-
 - [015: Robust Spotisaver track identity](015-robust-spotisaver-track-identity/request.md) — identify tracks through exact filename variants, embedded metadata, and verified album identity without fuzzy automatic matching.
-
 - [013: Diagnose and produce a high-quality episode 150 merge](013-episode-150-audio-quality-diagnostics/request.md) — preserve Spotisaver sources, inspect all 40 tracks, compare stream-copy and decoded PCM merging, and review all 39 boundaries.
-
 - [012: Complete Spotisaver ZIP download and improve progress output](012-spotisaver-zip-button-and-progress/request.md) — read the ETA and track progress, then click the final visible Download ZIP control to trigger the actual browser download.
-
 - [011: Retry Spotisaver after a queue rejection](011-spotisaver-queue-retry/request.md) — wait 30 seconds after an explicit queue rejection, close the modal, and submit the album request again.
 - [010: Wait for Spotisaver's queued browser download](010-spotisaver-wait-for-download-event/request.md) — monitor queue notices and modal progress until the browser signals the download, without a fixed timeout or repeated clicks.
 - [009: Poll Spotisaver for the album download button](009-spotisaver-button-first-readiness/request.md) — poll the real download button every second, click immediately when ready, and preserve strict archive validation.
@@ -36,8 +31,6 @@ Requests define what the project should do. Implementation plans define how an a
 - [004: Make TKKGDownloader a TKKGData consumer](004-tkkgdata-consumer/request.md) — consume shared episode and verified audio release data.
 - [003: Album count and progress](003-album-count-and-progress/implementation-plan.md)
 - [001: Episode downloader](001-episode-downloader/request.md)
-
-- [017: Production metadata and download output polish](017-production-metadata-and-download-polish/request.md) — embed and verify source artwork and metadata in normal downloads, make final file publication safe, and simplify ETA and queue waiting output.
 
 ## Naming
 

@@ -22,7 +22,9 @@ class ConfigurationTests(unittest.TestCase):
                 'default_provider = "spotisaver"\n'
                 'output_dir = "D:/Music/TKKG"\n'
                 'show_browser = true\n'
-                'mute_browser_audio = false\n',
+                'mute_browser_audio = false\n'
+                'queue_retry_interval_seconds = 40\n'
+                'queue_reload_after_retries = 7\n',
                 encoding="utf-8",
             )
             self.assertEqual(load_config(path), {
@@ -30,6 +32,8 @@ class ConfigurationTests(unittest.TestCase):
                 "output_dir": "D:/Music/TKKG",
                 "show_browser": True,
                 "mute_browser_audio": False,
+                "queue_retry_interval_seconds": 40,
+                "queue_reload_after_retries": 7,
             })
 
     def test_rejects_malformed_toml(self):
@@ -45,6 +49,9 @@ class ConfigurationTests(unittest.TestCase):
             ('show_browser = "yes"\n', "show_browser"),
             ('output_dir = 42\n', "output_dir"),
             ('unknown_setting = true\n', "Unknown configuration key"),
+            ('queue_retry_interval_seconds = 0\n', "positive integer"),
+            ('queue_reload_after_retries = -1\n', "positive integer"),
+            ('queue_retry_interval_seconds = true\n', "positive integer"),
         )
         for content, message in cases:
             with self.subTest(content=content), tempfile.TemporaryDirectory() as temp:
@@ -71,6 +78,8 @@ class ConfigurationTests(unittest.TestCase):
             "output_dir": Path("cli-output"),
             "show_browser": True,
             "mute_browser_audio": False,
+            "queue_retry_interval_seconds": 25,
+            "queue_reload_after_retries": 5,
         })
 
     def test_config_values_override_built_in_defaults(self):
@@ -80,11 +89,15 @@ class ConfigurationTests(unittest.TestCase):
             "output_dir": "music",
             "show_browser": True,
             "mute_browser_audio": False,
+            "queue_retry_interval_seconds": 40,
+            "queue_reload_after_retries": 7,
         }), {
             "provider": "spotisaver",
             "output_dir": Path("music"),
             "show_browser": True,
             "mute_browser_audio": False,
+            "queue_retry_interval_seconds": 40,
+            "queue_reload_after_retries": 7,
         })
 
     def test_built_in_defaults_are_preserved(self):
@@ -94,6 +107,8 @@ class ConfigurationTests(unittest.TestCase):
             "output_dir": Path("output"),
             "show_browser": False,
             "mute_browser_audio": True,
+            "queue_retry_interval_seconds": 25,
+            "queue_reload_after_retries": 5,
         })
 
     def test_windows_config_path(self):

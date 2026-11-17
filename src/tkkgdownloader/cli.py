@@ -68,6 +68,8 @@ def main() -> int:
     output_dir = settings["output_dir"]
     show_browser = settings["show_browser"]
     mute_browser_audio = settings["mute_browser_audio"]
+    queue_retry_interval_seconds = settings["queue_retry_interval_seconds"]
+    queue_reload_after_retries = settings["queue_reload_after_retries"]
 
     if args.diagnostic_dir is not None and provider != "spotisaver":
         print("ERROR: --diagnostic-dir requires --provider spotisaver.", file=sys.stderr)
@@ -104,6 +106,8 @@ def main() -> int:
                         "diagnostic_dir": args.diagnostic_dir,
                         "show_browser": show_browser,
                         "mute_browser_audio": mute_browser_audio,
+                        "queue_retry_interval_seconds": queue_retry_interval_seconds,
+                        "queue_reload_after_retries": queue_reload_after_retries,
                     }
                     if provider == "spotisaver"
                     else {}

@@ -17,6 +17,8 @@ _ALLOWED_KEYS = {
     "output_dir",
     "show_browser",
     "mute_browser_audio",
+    "queue_retry_interval_seconds",
+    "queue_reload_after_retries",
 }
 
 
@@ -57,6 +59,10 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     if output_dir is not None and (not isinstance(output_dir, str) or not output_dir.strip()):
         raise ConfigurationError("output_dir must be a non-empty string.")
 
+    for key in ("queue_retry_interval_seconds", "queue_reload_after_retries"):
+        if key in values and (type(values[key]) is not int or values[key] <= 0):
+            raise ConfigurationError(f"{key} must be a positive integer.")
+
     for key in ("show_browser", "mute_browser_audio"):
         if key in values and type(values[key]) is not bool:
             raise ConfigurationError(f"{key} must be true or false.")
@@ -79,4 +85,6 @@ def resolve_settings(args: Any, config: dict[str, Any]) -> dict[str, Any]:
             if args.unmute_browser is not None
             else config.get("mute_browser_audio", True)
         ),
+        "queue_retry_interval_seconds": config.get("queue_retry_interval_seconds", 25),
+        "queue_reload_after_retries": config.get("queue_reload_after_retries", 5),
     }
