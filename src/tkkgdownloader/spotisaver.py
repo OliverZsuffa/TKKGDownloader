@@ -51,6 +51,7 @@ class _ProgressReporter:
         )
         self.active_line = False
         self.last_line: str | None = None
+        self.last_visible_length = 0
         self.last_report = time.monotonic()
         self.queue_wait_started: float | None = None
         self.queue_wait_last_line: str | None = None
@@ -80,9 +81,12 @@ class _ProgressReporter:
         if self.interactive:
             if line == self.last_line:
                 return
-            print("\r" + line, end="", flush=True)
+            visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible_line))
+            print("\r" + line + padding, end="", flush=True)
             self.active_line = True
             self.last_line = line
+            self.last_visible_length = len(visible_line)
         elif time.monotonic() - self.last_report >= 15 and line != self.last_line:
             print(line, flush=True)
             self.last_report = time.monotonic()
@@ -100,9 +104,11 @@ class _ProgressReporter:
         line = f"Waiting for download slot... {elapsed // 60}m {elapsed % 60:02d}s elapsed"
         if self.interactive:
             if line != self.queue_wait_last_line:
-                print("\r" + line, end="", flush=True)
+                padding = " " * max(0, self.last_visible_length - len(line))
+                print("\r" + line + padding, end="", flush=True)
                 self.active_line = True
                 self.queue_wait_last_line = line
+                self.last_visible_length = len(line)
 
     def finish_queue_wait(self) -> float:
         if self.queue_wait_started is None:
@@ -124,6 +130,41 @@ class _ProgressReporter:
         if self.active_line:
             print(flush=True)
             self.active_line = False
+            self.last_visible_length = 0
+            self.last_line = None
+            self.queue_wait_last_line = None
+
+    def update_transfer(self, received: int, total: int | None) -> None:
+        received = max(0, int(received))
+        total = int(total) if total is not None and int(total) > 0 else None
+        received_text = _format_bytes(received)
+        if total is None:
+            line = f"Downloading ZIP... {received_text} received"
+        else:
+            percentage = min(100, round(received * 100 / total))
+            filled = round(20 * percentage / 100)
+            bar = "█" * filled + "░" * (20 - filled)
+            line = f"[{bar}]  {percentage}%  {received_text} / {_format_bytes(total)}"
+        if self.colour and total is not None:
+            line = re.sub(r"\[(█*)(░*)\]", lambda m: "[" + self._style(m.group(1), "success") + self._style(m.group(2), "muted") + "]", line)
+        if self.interactive:
+            visible_line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+            padding = " " * max(0, self.last_visible_length - len(visible_line))
+            print("\r" + line + padding, end="", flush=True)
+            self.active_line = True
+            self.last_visible_length = len(visible_line)
+        elif time.monotonic() - self.last_report >= 1:
+            print(line, flush=True)
+            self.last_report = time.monotonic()
+
+
+def _format_bytes(value: int) -> str:
+    amount = float(max(0, value))
+    for unit in ("B", "KB", "MB", "GB"):
+        if amount < 1024 or unit == "GB":
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{amount:.1f} GB"
 
 
 def _create_diagnostic_logger(episode_number: int | None) -> tuple[logging.Logger, Path]:
