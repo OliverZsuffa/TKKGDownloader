@@ -81,21 +81,6 @@ Supported keys are default_provider (yt-dlp or spotisaver), output_dir (a path),
 
 Settings are resolved in this order: explicit command-line arguments, the configuration file, then built-in defaults. The built-in defaults are yt-dlp, ./output, a hidden browser, and muted browser audio. Use --config PATH to select another configuration file. --provider and --output-dir override their configured values for one run. --show-browser displays Chromium for one run, and --unmute-browser enables browser audio for one run.
 
-## User configuration
-
-The optional TOML configuration file is stored outside the repository. On Windows the default path is %APPDATA%/TKKGDownloader/config.toml. On Linux and macOS it is $XDG_CONFIG_HOME/tkkgdownloader/config.toml, falling back to ~/.config/tkkgdownloader/config.toml.
-
-Example:
-
-    default_provider = "yt-dlp"
-    output_dir = "./output"
-    show_browser = false
-    mute_browser_audio = true
-
-Supported keys are default_provider (yt-dlp or spotisaver), output_dir (a path), show_browser (boolean), and mute_browser_audio (boolean). The file is optional and is not created automatically. A missing file is ignored. Malformed TOML, unknown keys, invalid types, and unsupported provider names produce an actionable error.
-
-Settings are resolved in this order: explicit command-line arguments, the configuration file, then built-in defaults. The built-in defaults are yt-dlp, ./output, a hidden browser, and muted browser audio. Use --config PATH to select another configuration file. --provider and --output-dir override their configured values for one run. --show-browser displays Chromium for one run, and --unmute-browser enables browser audio for one run.
-
 ## Data ownership
 
 [TKKGData](https://github.com/OliverZsuffa/TKKGData) is the single source of truth for episode metadata, verified Spotify releases, YouTube Music playlist URLs, individual song URLs, and source verification.
