@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved. Implementation in progress.
+Implemented. All CI checks passed on the final branch head.
 
 ## 1. Inspect and preserve current behaviour
 
@@ -71,8 +71,8 @@ Approved. Implementation in progress.
 2. Run focused tests for progress reporting, CLI resolution, configuration parsing, and Playwright launch arguments.
 3. Run the complete unittest suite.
 4. Run the TKKGData contract smoke test and all CI checks.
-5. Inspect the final diff for accidental changes to download, queue, matching, merging, or output behaviour.
-6. Do not claim a live Spotisaver download was tested unless one is actually performed.
+5. Inspect the final diff for accidental changes to download, queue, matching, merging, or output behaviour. The existing Playwright save flow and archive validation remain intact.
+6. No live Spotisaver download was performed for this implementation.
 
 ## 9. Delivery
 
