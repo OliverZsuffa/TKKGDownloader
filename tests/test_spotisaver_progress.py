@@ -221,6 +221,81 @@ class SpotisaverProgressTests(unittest.TestCase):
             reporter.update({"status": "Downloaded 1 of 40 tracks", "progress": "3%"}, 0)
         self.assertGreaterEqual(output.getvalue().count("\r"), 2)
 
+    def test_track_phase_message_precedes_its_first_progress_update(self):
+        class Reporter:
+            def __init__(self):
+                self.queue_wait_started = None
+                self.events = []
+            def stage(self, message, tone="info"):
+                self.events.append(("stage", message))
+            def start_queue_wait(self):
+                self.queue_wait_started = 0
+            def update_queue_wait(self):
+                pass
+            def finish_queue_wait(self):
+                self.queue_wait_started = None
+                return 0
+            def update(self, snapshot, started):
+                self.events.append(("update", snapshot.get("status", "")))
+            def finish(self):
+                pass
+            def update_transfer(self, received, total):
+                pass
+
+        class Page(FakePage):
+            def __init__(self, snapshot, zip_button):
+                super().__init__(snapshot, zip_button)
+                self.polls = 0
+            def evaluate(self, script):
+                return self.snapshot
+            def wait_for_timeout(self, timeout):
+                self.polls += 1
+                if self.polls == 1:
+                    self.snapshot = {
+                        "status": "ZIP archive created.",
+                        "log": "",
+                        "failed": "",
+                        "progress": "100 100%",
+                        "eta": "",
+                        "eta_template": "",
+                        "eta_minutes": "",
+                        "eta_seconds": "",
+                        "controls": '[{"text":"Download ZIP"}]',
+                    }
+                elif self.zip_button.clicked and not getattr(self, "download_sent", False):
+                    self.download_sent = True
+                    self.events["download"](FakeDownload())
+
+        reporter = Reporter()
+        zip_button = FakeButton("Download ZIP")
+        page = Page({
+            "status": "Downloaded 1 of 40 tracks",
+            "log": "",
+            "failed": "",
+            "progress": "2 2%",
+            "eta": "",
+            "eta_template": "",
+            "eta_minutes": "",
+            "eta_seconds": "",
+            "controls": "[]",
+        }, zip_button)
+
+        class AlbumButton:
+            def click(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(
+            spotisaver_module, "_ACTIVE_PROGRESS_REPORTER", reporter
+        ):
+            _download_click(page, AlbumButton(), Path(temp))
+
+        stage_index = reporter.events.index(("stage", "Downloading..."))
+        first_progress_index = next(
+            index for index, event in enumerate(reporter.events)
+            if event[0] == "update" and event[1] == "Downloaded 1 of 40 tracks"
+        )
+        self.assertLess(stage_index, first_progress_index)
+
     def test_cdp_progress_tracks_only_the_zip_download_guid(self):
         class Reporter:
             def __init__(self):
