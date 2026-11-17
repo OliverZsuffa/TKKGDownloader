@@ -536,7 +536,6 @@ def _download_click(
     cdp_available = False
     cdp_download_guid: str | None = None
     cdp_download_started = False
-    expected_zip_url = ""
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -751,10 +750,6 @@ def _download_click(
                 )
             _log("ZIP archive is ready. Clicking the verified Download ZIP button exactly once.", started)
             try:
-                expected_zip_url = zip_button.get_attribute("href") or ""
-            except Exception:
-                expected_zip_url = ""
-            try:
                 cdp = page.context.new_cdp_session(page)
                 cdp.send("Browser.setDownloadBehavior", {
                     "behavior": "allow",
@@ -767,9 +762,6 @@ def _download_click(
                     nonlocal cdp_download_guid
                     if not cdp_download_started:
                         return
-                    event_url = str(event.get("url", ""))
-                    if expected_zip_url.startswith("http") and event_url and event_url != expected_zip_url:
-                        return
                     if cdp_download_guid is None:
                         cdp_download_guid = str(event.get("guid", "")) or None
                         _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
@@ -781,7 +773,11 @@ def _download_click(
                         return
                     received = int(event.get("receivedBytes", 0) or 0)
                     total_value = event.get("totalBytes")
-                    total = int(total_value) if total_value is not None and float(total_value) > 0 else None
+                    try:
+                        total_number = float(total_value)
+                        total = int(total_number) if total_number > 0 else None
+                    except (TypeError, ValueError, OverflowError):
+                        total = None
                     progress_reporter.update_transfer(received, total)
                     if event.get("state") == "completed":
                         progress_reporter.finish()
