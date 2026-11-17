@@ -274,7 +274,10 @@ def _read_download_modal(page: Any) -> dict[str, str]:
             const etaPart = (name) => {
                 if (!etaVisible) return "";
                 const element = eta.querySelector('[data-eta-part="' + name + '"]');
-                return element ? (element.innerText || element.textContent || "").trim() : "";
+                if (!element) return "";
+                const text = (element.innerText || element.textContent || "").trim();
+                const match = text.match(/\\d+/);
+                return match ? match[0] : "";
             };
             const retryControls = Array.from(
                 document.querySelectorAll(".modal.show button, .modal.show a")
@@ -324,10 +327,15 @@ def _format_eta(snapshot: dict[str, str]) -> str | None:
     raw_seconds = snapshot.get("eta_seconds", "").strip()
     try:
         if raw_seconds:
-            minutes = int(raw_minutes or "0")
-            seconds = int(raw_seconds)
+            minute_match = re.search(r"\\d+", raw_minutes)
+            second_match = re.search(r"\\d+", raw_seconds)
+            if not second_match:
+                return None
+            minutes = int(minute_match.group(0)) if minute_match else 0
+            seconds = int(second_match.group(0))
         else:
-            match = re.search(r"(?:(\d+)\s*m(?:in)?\s*)?(\d+)\s*s(?:ec)?", snapshot.get("eta", ""), re.I)
+            eta_text = re.sub(r"\\s+", " ", snapshot.get("eta", "").strip())
+            match = re.search(r"(?:(\\d+)\\s*m(?:in)?\\s*)?(\\d+)\\s*s(?:ec)?", eta_text, re.I)
             if not match:
                 return None
             minutes = int(match.group(1) or "0")
@@ -678,8 +686,6 @@ def _download_click(
                     f"Spotisaver processing positively confirmed during attempt {attempt}.",
                     started,
                 )
-            if not queue_busy:
-                progress_reporter.update(snapshot, started)
             status = snapshot.get("status", "")
             combined_status = " ".join((status, snapshot.get("log", "")))
             if re.search(r"creating ZIP archive", combined_status, re.I):
@@ -699,6 +705,8 @@ def _download_click(
                     report_stage("Downloading...", "info")
                 _log(f"Spotisaver phase: {phase}.", started)
                 last_phase = phase
+            if not queue_busy:
+                progress_reporter.update(snapshot, started)
             last_snapshot = snapshot
 
         failure = _download_failure(snapshot)
