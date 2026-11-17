@@ -25,16 +25,52 @@ Fix the two confirmed Spotisaver issues without changing queue behavior, browser
 - Keep the existing final file existence and nonzero size checks, then continue into the unchanged archive validation workflow.
 - Ensure CDP detach still happens on success and failure.
 
-## 3. Audit and improve terminal progress output
+## 3. Redesign terminal progress as an end-to-end pipeline view
 
-- Review the complete terminal output path from browser startup through track download, archive preparation, ZIP transfer, validation, and error reporting.
-- Use the episode 144 output supplied by the user as a concrete reference, including the transition from track progress to archive preparation and the ZIP transfer progress display.
-- Identify and correct visual defects such as inconsistent spacing, progress bar width or alignment, stale characters, confusing phase transitions, duplicate or contradictory status lines, and unclear byte or percentage formatting.
-- Keep the display compact and readable in a standard Windows PowerShell terminal.
-- Ensure progress updates do not overwrite unrelated status messages and that each phase has a clear, consistent presentation.
-- Preserve useful detail, including track counts, ETA when valid, ZIP byte progress when known, and clear completion or failure messages.
-- Add or adjust deterministic tests for formatting, line replacement, phase ordering, and representative short and long progress values.
-- Do not introduce terminal-only dependencies or change download semantics solely for cosmetic reasons.
+The goal is to show what the downloader is doing throughout the complete episode workflow, not merely to polish the existing bars.
+
+### 3.1 Diagnose and fix the duplicate ZIP progress output
+
+- Trace every source that writes ZIP transfer progress, including the initial CDP event, subsequent CDP events, Playwright download callbacks, and explicit status messages.
+- Establish from the code and tests why the supplied run printed a 0% line and then a separate 100% line instead of updating one progress bar.
+- Ensure the ZIP transfer has exactly one progress display that is updated in place from its initial state through completion.
+- Do not emit a second bar for the same transfer. If progress cannot be measured, show one clearly indeterminate state rather than fabricated intermediate percentages.
+- Preserve byte counts and total size when known.
+
+### 3.2 Correct archive preparation progress
+
+- Trace how the archive preparation percentage is currently calculated and explain why it stopped at 90%.
+- Determine whether the 90% is a hardcoded phase allocation, a weighted overall progress value, or an actual measured value.
+- Do not present a stage allocation as if it were measured task progress.
+- If archive creation exposes measurable progress, display it accurately and finish at 100%.
+- If it does not expose measurable progress, use an indeterminate preparation indicator or clear stage messages, then show 100% only when archive creation has actually completed.
+- Make the transition from preparation to ZIP transfer unambiguous.
+
+### 3.3 Add progress visibility for the remaining processing stages
+
+- Inspect the complete post-download pipeline and identify the real stages, including archive validation, extraction, track discovery or matching, audio merging, output writing, and cleanup where applicable.
+- Add progress indicators for stages where meaningful progress can be measured, especially merging and other potentially long-running processing.
+- For measurable work, show a single updating bar with current item count and percentage, such as merged tracks out of total tracks.
+- For work without a measurable unit of progress, show an indeterminate activity indicator and a clear stage label. Do not invent percentages.
+- Emit a clear completion message when each stage finishes.
+- Keep the output compact and consistent, with no overlapping bars or progress updates that overwrite unrelated status messages.
+- Avoid adding progress instrumentation that changes the underlying processing behavior.
+
+### 3.4 Add total elapsed time
+
+- Measure the full episode operation using a monotonic clock, starting when the episode workflow begins and ending on success or failure.
+- Display elapsed time during the run in a stable location without creating a new line on every refresh.
+- Always report the final total elapsed time, including on failure.
+- Use a readable duration format and test short as well as multi-minute durations.
+- If stage durations can be added without clutter, keep them supplementary. The total elapsed time is the required metric.
+
+### 3.5 General presentation and tests
+
+- Use the supplied episode 144 output as the baseline and verify the full sequence from browser startup through final merged output.
+- Keep the display readable in standard Windows PowerShell.
+- Use consistent bar width, alignment, spacing, units, and phase naming.
+- Add deterministic tests for the single ZIP bar, archive preparation completion semantics, processing-stage progress, elapsed-time formatting and reporting, line replacement, and phase ordering.
+- Do not introduce terminal-only dependencies or change download semantics solely for presentation.
 
 ## 4. Tests
 
