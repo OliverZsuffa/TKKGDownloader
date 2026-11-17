@@ -4,9 +4,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from tkkgdownloader.config import ConfigurationError, default_config_path, load_config
+from tkkgdownloader.config import ConfigurationError, default_config_path, load_config, resolve_settings
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -51,6 +52,49 @@ class ConfigurationTests(unittest.TestCase):
                 path.write_text(content, encoding="utf-8")
                 with self.assertRaisesRegex(ConfigurationError, message):
                     load_config(path)
+
+    def test_cli_values_override_config_and_built_in_defaults(self):
+        args = SimpleNamespace(
+            provider="yt-dlp",
+            output_dir=Path("cli-output"),
+            show_browser=True,
+            unmute_browser=True,
+        )
+        config = {
+            "default_provider": "spotisaver",
+            "output_dir": "config-output",
+            "show_browser": False,
+            "mute_browser_audio": True,
+        }
+        self.assertEqual(resolve_settings(args, config), {
+            "provider": "yt-dlp",
+            "output_dir": Path("cli-output"),
+            "show_browser": True,
+            "mute_browser_audio": False,
+        })
+
+    def test_config_values_override_built_in_defaults(self):
+        args = SimpleNamespace(provider=None, output_dir=None, show_browser=None, unmute_browser=None)
+        self.assertEqual(resolve_settings(args, {
+            "default_provider": "spotisaver",
+            "output_dir": "music",
+            "show_browser": True,
+            "mute_browser_audio": False,
+        }), {
+            "provider": "spotisaver",
+            "output_dir": Path("music"),
+            "show_browser": True,
+            "mute_browser_audio": False,
+        })
+
+    def test_built_in_defaults_are_preserved(self):
+        args = SimpleNamespace(provider=None, output_dir=None, show_browser=None, unmute_browser=None)
+        self.assertEqual(resolve_settings(args, {}), {
+            "provider": "yt-dlp",
+            "output_dir": Path("output"),
+            "show_browser": False,
+            "mute_browser_audio": True,
+        })
 
     def test_windows_config_path(self):
         with patch("tkkgdownloader.config.os.name", "nt"), patch.dict(
