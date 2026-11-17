@@ -84,10 +84,8 @@ Approved. Implementation in progress.
 
 ## Decisions retained
 
-- Existing built-in defaults remain `yt-dlp` and `./output` unless Oliver chooses different values.
-- Browser visibility defaults to hidden.
+- Existing built-in defaults remain `yt-dlp` and `./output`.
+- Browser visibility defaults to headless.
 - Browser audio defaults to muted.
 - Command-line arguments override configuration.
-- No configuration file is required for existing users.
-- Retain the existing built-in defaults: `yt-dlp` and `./output`.
-- Do not create the optional configuration file automatically.
+- The configuration file is optional and is not created automatically.
