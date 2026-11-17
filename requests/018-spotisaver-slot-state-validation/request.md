@@ -8,7 +8,7 @@ The Spotisaver downloader can report "Download slot acquired" when the site's qu
 
 - An explicit "all download slots are busy" notice means the request is rejected or queued.
 - The disappearance of that notice alone means the state is unconfirmed, not accepted.
-- The downloader reports "Download slot acquired" only after observing positive evidence that Spotisaver has begun processing the request.
+- "Downloading playlist..." is a provisional acceptance signal. The downloader waits five seconds for a delayed queue rejection before reporting "Download slot acquired". If the status remains visible without rejection for the full window, it counts as accepted.
 - Positive evidence must come from the visible modal, such as an explicit active download status, actual track progress, or ZIP creation starting or completing.
 - While the state is unconfirmed, the downloader keeps monitoring the visible modal and does not claim success or submit another request.
 - Existing queue retry behaviour remains limited to an explicit queue rejection that stays active for the configured wait period.
