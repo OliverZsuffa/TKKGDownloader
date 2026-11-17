@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Waiting for Oliver's approval.
+Approved. Implementation in progress.
 
 ## 1. Inspect and preserve current behaviour
 
@@ -89,3 +89,5 @@ Proposed. Waiting for Oliver's approval.
 - Browser audio defaults to muted.
 - Command-line arguments override configuration.
 - No configuration file is required for existing users.
+- Retain the existing built-in defaults: `yt-dlp` and `./output`.
+- Do not create the optional configuration file automatically.
