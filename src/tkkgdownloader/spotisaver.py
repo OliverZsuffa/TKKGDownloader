@@ -910,10 +910,10 @@ def _download_click(
                         progress_reporter.finish_transfer(received, total)
                         progress_reporter.finish()
                         report_stage("ZIP transfer complete. Validating archive...", "success")
-                    else:
-                        progress_reporter.update_transfer(received, total)
                     elif event.get("state") == "canceled":
                         _log("Chromium reported that the ZIP transfer was canceled.", started)
+                    else:
+                        progress_reporter.update_transfer(received, total)
 
                 cdp.on("Browser.downloadWillBegin", on_download_will_begin)
                 cdp.on("Browser.downloadProgress", on_download_progress)
