@@ -78,6 +78,8 @@ class ConfigurationTests(unittest.TestCase):
             "output_dir": Path("cli-output"),
             "show_browser": True,
             "mute_browser_audio": False,
+            "queue_retry_interval_seconds": 25,
+            "queue_reload_after_retries": 5,
         })
 
     def test_config_values_override_built_in_defaults(self):
@@ -87,13 +89,15 @@ class ConfigurationTests(unittest.TestCase):
             "output_dir": "music",
             "show_browser": True,
             "mute_browser_audio": False,
+            "queue_retry_interval_seconds": 40,
+            "queue_reload_after_retries": 7,
         }), {
             "provider": "spotisaver",
             "output_dir": Path("music"),
             "show_browser": True,
             "mute_browser_audio": False,
-            "queue_retry_interval_seconds": 25,
-            "queue_reload_after_retries": 5,
+            "queue_retry_interval_seconds": 40,
+            "queue_reload_after_retries": 7,
         })
 
     def test_built_in_defaults_are_preserved(self):
