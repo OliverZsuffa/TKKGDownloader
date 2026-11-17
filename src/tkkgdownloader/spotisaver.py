@@ -923,6 +923,11 @@ def _download_click(
                     cdp.on("Browser.downloadProgress", on_download_progress)
                     _log("Chromium DevTools download progress events enabled.", started)
                 except Exception as exc:
+                    if cdp is not None:
+                        try:
+                            cdp.detach()
+                        except Exception:
+                            pass
                     cdp = None
                     cdp_available = False
                     _log(f"Chromium download progress events unavailable: {type(exc).__name__}: {exc}", started)
@@ -935,6 +940,11 @@ def _download_click(
                     zip_button.click()
                 except Exception as exc:
                     _log(f"Download ZIP button click failed: {type(exc).__name__}: {exc}", started)
+                    if cdp is not None:
+                        try:
+                            cdp.detach()
+                        except Exception:
+                            pass
                     raise
                 zip_button_clicked = True
                 last_phase = "ZIP download requested"
