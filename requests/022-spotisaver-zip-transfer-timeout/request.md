@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Approved and implemented on branch `implement/request-022-spotisaver-zip-timeout`.
 
 ## Objective
 
