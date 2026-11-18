@@ -586,6 +586,76 @@ def _download_state(snapshot: dict[str, str]) -> str:
     return "unconfirmed"
 
 
+def _wait_for_cdp_download_completion(
+    page: Any,
+    transfer_state: dict[str, Any],
+    *,
+    inactivity_timeout_seconds: float = 120,
+    heartbeat_interval_seconds: float = 15,
+) -> None:
+    """Wait while the matching Chromium download is making measurable progress."""
+    last_heartbeat = time.monotonic()
+    while True:
+        state = transfer_state.get("state")
+        received = int(transfer_state.get("received_bytes", 0) or 0)
+        total = transfer_state.get("total_bytes")
+        last_progress = float(transfer_state.get("last_progress_at", last_heartbeat))
+        now = time.monotonic()
+        inactive_for = max(0.0, now - last_progress)
+        total_text = _format_bytes(int(total)) if total else "unknown"
+
+        if state == "completed":
+            return
+        if state == "canceled":
+            raise RuntimeError(
+                "Chromium canceled the ZIP transfer after receiving "
+                f"{_format_bytes(received)} of {total_text}."
+            )
+        if inactive_for >= inactivity_timeout_seconds:
+            raise RuntimeError(
+                "Chromium ZIP transfer made no measurable progress for "
+                f"{inactive_for:.0f} seconds. Received {_format_bytes(received)} "
+                f"of {total_text}."
+            )
+
+        if now - last_heartbeat >= heartbeat_interval_seconds:
+            _log(
+                "Chromium ZIP transfer still active: "
+                f"{_format_bytes(received)} of {total_text}; "
+                f"no byte progress for {inactive_for:.0f}s."
+            )
+            last_heartbeat = now
+        page.wait_for_timeout(250)
+
+
+def _wait_for_download_file(
+    page: Any,
+    destination: Path,
+    *,
+    timeout_seconds: float = 30,
+    stable_checks_required: int = 2,
+) -> None:
+    """Wait independently for Chromium's completed file to become non-empty and stable."""
+    deadline = time.monotonic() + timeout_seconds
+    previous_size = -1
+    stable_checks = 0
+    while time.monotonic() < deadline:
+        if destination.is_file():
+            size_now = destination.stat().st_size
+            if size_now > 0 and size_now == previous_size:
+                stable_checks += 1
+                if stable_checks >= stable_checks_required:
+                    return
+            else:
+                stable_checks = 0
+            previous_size = size_now
+        page.wait_for_timeout(250)
+    raise RuntimeError(
+        "Chromium reported ZIP transfer completion, but its download file did not "
+        f"become non-empty and stable within {timeout_seconds:.0f} seconds: {destination}"
+    )
+
+
 def _download_click(
     page: Any,
     locator: Any,
@@ -614,7 +684,12 @@ def _download_click(
     cdp_download_guid: str | None = None
     cdp_download_started = False
     cdp_progress_seen = False
-    cdp_download_completed = False
+    cdp_transfer_state: dict[str, Any] = {
+        "state": "pending",
+        "received_bytes": 0,
+        "total_bytes": None,
+        "last_progress_at": time.monotonic(),
+    }
     progress_reporter = globals().get("_ACTIVE_PROGRESS_REPORTER")
     if progress_reporter is None:
         progress_reporter = _ProgressReporter()
@@ -892,10 +967,11 @@ def _download_click(
                             return
                         if cdp_download_guid is None:
                             cdp_download_guid = str(event.get("guid", "")) or None
+                            cdp_transfer_state["last_progress_at"] = time.monotonic()
                             _log(f"Chromium download started: {event.get('suggestedFilename', '')!r}.", started)
 
                     def on_download_progress(event: dict[str, Any]) -> None:
-                        nonlocal cdp_progress_seen, cdp_download_completed
+                        nonlocal cdp_progress_seen
                         if not cdp_download_started or not cdp_download_guid:
                             return
                         if str(event.get("guid", "")) != cdp_download_guid:
@@ -908,13 +984,25 @@ def _download_click(
                             total = int(total_number) if total_number > 0 else None
                         except (TypeError, ValueError, OverflowError):
                             total = None
-                        if event.get("state") == "completed":
-                            cdp_download_completed = True
+                        previous_received = int(cdp_transfer_state.get("received_bytes", 0) or 0)
+                        if received > previous_received:
+                            cdp_transfer_state["last_progress_at"] = time.monotonic()
+                        cdp_transfer_state["received_bytes"] = received
+                        cdp_transfer_state["total_bytes"] = total
+                        event_state = event.get("state")
+                        if event_state in {"completed", "canceled"}:
+                            cdp_transfer_state["state"] = event_state
+                        if event_state == "completed":
                             progress_reporter.finish_transfer(received, total)
                             progress_reporter.finish()
                             report_stage("ZIP transfer complete. Validating archive...", "success")
-                        elif event.get("state") == "canceled":
-                            _log("Chromium reported that the ZIP transfer was canceled.", started)
+                        elif event_state == "canceled":
+                            _log(
+                                "Chromium reported that the ZIP transfer was canceled after "
+                                f"{_format_bytes(received)} of "
+                                f"{_format_bytes(total) if total else 'unknown size'}.",
+                                started,
+                            )
                         else:
                             progress_reporter.update_transfer(received, total)
 
@@ -979,30 +1067,18 @@ def _download_click(
 
     try:
         if cdp_available and cdp_download_guid is not None:
-            _log(f"Chromium owns ZIP persistence. Waiting for completed file: {destination}", started)
-            deadline = time.monotonic() + 30
-            while not cdp_download_completed and time.monotonic() < deadline:
-                page.wait_for_timeout(250)
-            if not cdp_download_completed:
-                raise RuntimeError("Chromium started the ZIP transfer but did not report completion within 30 seconds.")
-            previous_size = -1
-            stable_checks = 0
-            while time.monotonic() < deadline:
-                if destination.is_file():
-                    size_now = destination.stat().st_size
-                    if size_now > 0 and size_now == previous_size:
-                        stable_checks += 1
-                        if stable_checks >= 2:
-                            break
-                    else:
-                        stable_checks = 0
-                    previous_size = size_now
-                page.wait_for_timeout(250)
-            else:
-                raise RuntimeError(
-                    "Chromium reported ZIP transfer completion, but its download file did not "
-                    f"become non-empty and stable within 30 seconds: {destination}"
-                )
+            _log(
+                "Chromium owns ZIP persistence. Waiting for completion with a "
+                "120-second byte-progress inactivity timeout.",
+                started,
+            )
+            _wait_for_cdp_download_completion(page, cdp_transfer_state)
+            _log(
+                "Chromium reported ZIP transfer completion. Waiting up to 30 seconds "
+                f"for the file to become non-empty and stable: {destination}",
+                started,
+            )
+            _wait_for_download_file(page, destination, timeout_seconds=30)
         else:
             _log(f"Saving browser download through Playwright to: {destination}")
             try:
