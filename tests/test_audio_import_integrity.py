@@ -8,6 +8,8 @@ from pathlib import Path
 
 from mutagen.id3 import ID3, TALB, TIT2, TRCK
 
+from tkkgdownloader.filenames import safe_filename, unique_filename
+
 from tkkgdownloader.audio_import import (
     import_audio_files,
     serializable_manifest,
@@ -262,3 +264,24 @@ class TrackIdentityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FilenameSanitizationTests(unittest.TestCase):
+    def test_replaces_windows_forbidden_characters(self):
+        self.assertEqual(safe_filename('What? "now": *yes*'), 'What_ _now__ _yes_')
+    def test_reserved_device_names_are_prefixed(self):
+        for name in ("CON", "NUL", "AUX", "COM1", "LPT9"):
+            self.assertEqual(safe_filename(name), "_" + name)
+    def test_trailing_spaces_and_periods_are_removed(self):
+        self.assertEqual(safe_filename("Title...  "), "Title")
+    def test_empty_names_use_fallback(self):
+        self.assertEqual(safe_filename("   "), "Untitled")
+    def test_length_is_limited(self):
+        self.assertEqual(len(safe_filename("x" * 300)), 180)
+    def test_collision_gets_deterministic_suffix(self):
+        used = set()
+        self.assertEqual(unique_filename("Title?", used), "Title_")
+        self.assertEqual(unique_filename("Title*", used), "Title_ (2)")
+        self.assertEqual(unique_filename("title:", used), "title_ (3)")
+    def test_normal_title_is_unchanged(self):
+        self.assertEqual(safe_filename("Wer stoppt die Weihnachts-Gangster"), "Wer stoppt die Weihnachts-Gangster")
