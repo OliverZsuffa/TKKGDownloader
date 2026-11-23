@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [023: Windows-safe output filenames](023-windows-safe-filenames/request.md) : sanitize title-derived filesystem paths for Windows, including reserved names and collisions.
+
 - [022: Wait for the complete Spotisaver ZIP transfer](022-spotisaver-zip-transfer-timeout/request.md) — wait for byte progress or a genuine inactivity timeout instead of imposing a 30-second total transfer deadline.
 - [020: Configurable Spotisaver queue retries and page reload](020-spotisaver-queue-reload-retries/request.md) — configure the queue retry interval and reload the album page after repeated unsuccessful retries.
 - [019: Spotisaver browser experience and downloader defaults](019-spotisaver-browser-and-defaults/request.md) — fix progress output, show actual ZIP transfer progress when Chromium exposes it, run Chromium headlessly and muted by default, and add optional user-level TOML settings.
