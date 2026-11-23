@@ -14,6 +14,8 @@ from typing import Any, Callable
 
 from mutagen.id3 import ID3
 
+from .filenames import safe_filename
+
 
 def _normalize(value: str) -> str:
     """Normalise harmless filename differences without permitting partial matches."""
@@ -300,7 +302,7 @@ def import_audio_files(
     warnings: list[dict[str, Any]] = []
     for track, source, rule, evidence in mappings:
         number = track["track_number"]
-        target = destination / f"{number:02d} - {track['spotify_title']}.mp3"
+        target = destination / f"{number:02d} - {safe_filename(track['spotify_title'])}.mp3"
         shutil.copy2(source, target)
         source_hash = _sha256(source)
         target_hash = _sha256(target)
