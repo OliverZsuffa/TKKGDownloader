@@ -19,14 +19,14 @@ def safe_filename(value: str, *, max_length: int = 180, fallback: str = "Untitle
 
 def unique_filename(value: str, used: set[str], *, max_length: int = 180) -> str:
     """Return a deterministic filename component unique within a case-insensitive set."""
-    candidate = safe_filename(value, max_length=max_length)
-    if candidate.casefold() not in used:
-        used.add(candidate.casefold())
-        return candidate
+    base = safe_filename(value, max_length=max_length)
+    if base.casefold() not in used:
+        used.add(base.casefold())
+        return base
     number = 2
     while True:
         suffix = " (" + str(number) + ")"
-        candidate = candidate[:max_length-len(suffix)].rstrip(" .") + suffix
+        candidate = base[:max_length-len(suffix)].rstrip(" .") + suffix
         key = candidate.casefold()
         if key not in used:
             used.add(key)
