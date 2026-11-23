@@ -2,13 +2,13 @@
 from __future__ import annotations
 import re
 
-_INVALID = re.compile(r'[<>:"/\\\\|?*\\x00-\\x1f]')
-_RESERVED = re.compile(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$", re.IGNORECASE)
+_INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED = re.compile(r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$", re.IGNORECASE)
 
 def safe_filename(value: str, *, max_length: int = 180, fallback: str = "Untitled") -> str:
     """Sanitize a filename component for Windows and common portable filesystems."""
     cleaned = _INVALID.sub("_", value)
-    cleaned = re.sub(r"\\s+", " ", cleaned).strip(" .")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     if not cleaned:
         cleaned = fallback
     if _RESERVED.fullmatch(cleaned):
