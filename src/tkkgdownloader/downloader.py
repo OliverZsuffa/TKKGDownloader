@@ -15,6 +15,7 @@ from .audio_sources import validate_audio_release
 from .episodes import Episode
 from .merger import merge_tracks, ordered_tracks
 from .metadata import finalize_metadata
+from .filenames import safe_filename
 from .spotisaver import download_and_import, finish_run_timer, report_progress, report_stage, start_run_timer
 
 
@@ -36,8 +37,7 @@ def _command(name: str) -> list[str]:
 
 
 def _safe_filename(value: str) -> str:
-    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
-    return re.sub(r"\s+", " ", value).strip(" .") or "Untitled"
+    return safe_filename(value)
 
 
 def _format_elapsed(seconds: float) -> str:
