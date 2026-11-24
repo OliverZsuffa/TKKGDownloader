@@ -14,11 +14,17 @@ TKKGData owns scraping, Spotify resolution, YouTube Music matching, source verif
 
 The default provider uses yt-dlp directly with each individual YouTube Music video URL and the exact video ID validated from TKKGData. Do not ask spotDL to resolve the playlist or individual song URLs. The previous spotDL 4.5.2 path attempted downloads with a YouTube URL containing a missing video ID.
 
-## 004. Validate track integrity from the shared mapping
+## 004. Validate each provider's independent tracklist
 
-The Spotify track count, YouTube Music track count, matched count, and actual list length must agree. Track numbers must be contiguous and ordered. Validate each provider ID against its corresponding URL.
+The dataset metadata schema version and each episode's `audio_release.schema_version` are separate contracts. The consumer currently supports dataset schema 1.x and audio release schema version 2.
 
-After downloading, require every expected MP3 file to exist and be non-empty. Never create a combined file from an incomplete or ambiguous download.
+Spotify and YouTube Music have independent release objects, ordered tracklists, counts, identifiers, URLs, and verification records. Validate the selected provider against its own release only. Do not compare provider track counts, titles, numbering, or positions, and do not require the overall release status to be `verified` when the selected provider is independently verified. A selected provider is usable only when its own verification status is `verified`, its verified count matches its own complete tracklist, and its identifiers, URLs, ordering, and declared counts are internally consistent.
+
+The default yt-dlp provider uses every exact verified YouTube Music video URL in the published order. Spotisaver uses the verified Spotify album ID and the complete Spotify tracklist. Spotify disc and track positions are preserved as source metadata while the normalized import sequence is one-based and contiguous.
+
+After downloading, require every expected file for the selected provider to exist and be non-empty. Never create a combined file from an incomplete or ambiguous download. A missing or unverified mapping for one provider does not invalidate the other provider.
+
+The separate `data/audio-unavailable.json` registry records reviewed episodes with no expected official digital rerelease. Treat those entries as known unavailability, not as discovery failures. Do not infer global unavailability from a missing provider mapping.
 
 ## 005. Preserve the command line contract
 
