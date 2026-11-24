@@ -180,17 +180,12 @@ def download_episode_spotisaver(
     """Download one episode through Spotisaver, optionally retaining a full diagnostic workspace."""
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
-    if episode.audio_unavailable_reason:
-        raise RuntimeError(
-            f"Episode {episode.number} is marked unavailable in TKKGData: "
-            f"{episode.audio_unavailable_reason}"
-        )
     if diagnostic_dir is not None:
-    if episode.audio_unavailable_reason:
-        raise RuntimeError(
-            f"Episode {episode.number} is marked unavailable in TKKGData: "
-            f"{episode.audio_unavailable_reason}"
-        )
+        if episode.audio_unavailable_reason:
+            raise RuntimeError(
+                f"Episode {episode.number} is marked unavailable in TKKGData: "
+                f"{episode.audio_unavailable_reason}"
+            )
         try:
             plan = validate_audio_release(episode.audio_release, provider="spotisaver")
         except ValueError as exc:
@@ -240,8 +235,13 @@ def download_episode_spotisaver(
     if final_path.exists() and not overwrite:
         print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
         return final_path
+    if episode.audio_unavailable_reason:
+        raise RuntimeError(
+            f"Episode {episode.number} is marked unavailable in TKKGData: "
+            f"{episode.audio_unavailable_reason}"
+        )
     try:
-        plan = validate_audio_release(episode.audio_release)
+        plan = validate_audio_release(episode.audio_release, provider="spotisaver")
     except ValueError as exc:
         raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
 
