@@ -14,6 +14,8 @@ Requests define what the project should do. Implementation plans define how an a
 
 ## Request index
 
+- [024: Consume the independent TKKGData audio release format](024-tkkgdata-audio-v2-consumer/request.md) — migrate the downloader to provider-specific Spotify and YouTube Music tracklists from audio release schema version 2.
+
 - [023: Windows-safe output filenames](023-windows-safe-filenames/request.md) : sanitize title-derived filesystem paths for Windows, including reserved names and collisions.
 
 - [022: Wait for the complete Spotisaver ZIP transfer](022-spotisaver-zip-transfer-timeout/request.md) — wait for byte progress or a genuine inactivity timeout instead of imposing a 30-second total transfer deadline.
