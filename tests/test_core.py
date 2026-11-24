@@ -128,7 +128,7 @@ class CatalogTests(unittest.TestCase):
                 "19": {"status": "unavailable", "reason": "Reviewed reason", "basis": "Review"},
             },
         }
-        catalog = parse_catalog([episode_record(1, "One"), episode_record(19, "Nineteen")], registry)
+        catalog = parse_catalog([episode_record(n, f"Episode {n}") for n in range(1, 20)], registry)
         self.assertEqual(catalog[19].audio_unavailable_reason, "Reviewed reason")
         self.assertEqual(catalog[19].audio_unavailable_basis, "Review")
         self.assertIsNone(catalog[1].audio_unavailable_reason)
