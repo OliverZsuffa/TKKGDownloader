@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Implementation must not begin until Oliver explicitly approves this request and plan.
+Approved by Oliver. Implementation in progress.
 
 ## Goal
 
