@@ -236,6 +236,9 @@ def _validate_youtube_music(audio_release: dict[str, Any]) -> dict[str, Any]:
             or query_id != playlist_id
         ):
             raise ValueError("TKKGData YouTube Music playlist URL does not match its playlist ID.")
+        playlist_title = playlist.get("title")
+        if not isinstance(playlist_title, str) or not playlist_title.strip():
+            raise ValueError("TKKGData YouTube Music playlist has no title.")
         playlist_count = _required_int(playlist.get("track_count"), "YouTube Music playlist track_count")
         if playlist_count != len(normalized):
             raise ValueError("TKKGData YouTube Music playlist count does not match its own tracklist.")
