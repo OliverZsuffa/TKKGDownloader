@@ -135,14 +135,14 @@ def download_episode(
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
+    if final_path.exists() and not overwrite:
+        print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
+        return final_path
     if episode.audio_unavailable_reason:
         raise RuntimeError(
             f"Episode {episode.number} is marked unavailable in TKKGData: "
             f"{episode.audio_unavailable_reason}"
         )
-    if final_path.exists() and not overwrite:
-        print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
-        return final_path
     try:
         plan = validate_audio_release(episode.audio_release, provider="yt-dlp")
     except ValueError as exc:
@@ -186,6 +186,11 @@ def download_episode_spotisaver(
             f"{episode.audio_unavailable_reason}"
         )
     if diagnostic_dir is not None:
+    if episode.audio_unavailable_reason:
+        raise RuntimeError(
+            f"Episode {episode.number} is marked unavailable in TKKGData: "
+            f"{episode.audio_unavailable_reason}"
+        )
         try:
             plan = validate_audio_release(episode.audio_release, provider="spotisaver")
         except ValueError as exc:
