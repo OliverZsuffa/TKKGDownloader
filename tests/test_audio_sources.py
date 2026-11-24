@@ -146,6 +146,44 @@ class AudioSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no Spotify release"):
             validate_audio_release(release, provider="spotisaver")
 
+    def test_spotify_remains_usable_when_youtube_music_is_missing(self):
+        release = make_audio_release()
+        release["youtube_music"] = None
+        release["verification"]["youtube_music"] = {
+            "status": "pending", "verified_track_count": 0,
+        }
+        self.assertEqual(
+            validate_audio_release(release, provider="spotisaver")["track_count"], 2
+        )
+        with self.assertRaisesRegex(ValueError, "no YouTube Music release"):
+            validate_audio_release(release, provider="yt-dlp")
+
+    def test_spotify_duplicate_track_ids_are_rejected(self):
+        release = make_audio_release()
+        release["spotify"]["tracks"][1]["track_id"] = release["spotify"]["tracks"][0]["track_id"]
+        release["spotify"]["tracks"][1]["url"] = release["spotify"]["tracks"][0]["url"]
+        with self.assertRaisesRegex(ValueError, "duplicates a previous track ID"):
+            validate_audio_release(release, provider="spotisaver")
+
+    def test_spotify_disc_positions_must_be_strictly_ordered(self):
+        release = make_audio_release(spotify_count=3, youtube_count=2)
+        release["spotify"]["tracks"][2]["track_number"] = 1
+        with self.assertRaisesRegex(ValueError, "duplicates or are out of order"):
+            validate_audio_release(release, provider="spotisaver")
+
+    def test_spotify_declared_count_must_match_its_own_tracklist(self):
+        release = make_audio_release()
+        release["spotify"]["track_count"] = 3
+        with self.assertRaisesRegex(ValueError, "Spotify declared track counts"):
+            validate_audio_release(release, provider="spotisaver")
+
+    def test_duplicate_youtube_video_ids_are_rejected(self):
+        release = make_audio_release()
+        release["youtube_music"]["tracks"][1]["video_id"] = release["youtube_music"]["tracks"][0]["video_id"]
+        release["youtube_music"]["tracks"][1]["url"] = release["youtube_music"]["tracks"][0]["url"]
+        with self.assertRaisesRegex(ValueError, "duplicates a previous video ID"):
+            validate_audio_release(release, provider="yt-dlp")
+
     def test_unverified_selected_provider_is_rejected(self):
         release = make_audio_release()
         release["verification"]["youtube_music"]["status"] = "pending"
