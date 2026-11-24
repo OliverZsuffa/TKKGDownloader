@@ -21,6 +21,10 @@ def _provider_verification(audio_release: dict[str, Any], provider: str, count: 
     verification = audio_release.get("verification")
     if not isinstance(verification, dict):
         raise ValueError("TKKGData audio release has no verification metadata.")
+    if verification.get("status") not in ("verified", "partial", "unverified"):
+        raise ValueError("TKKGData audio release has an invalid combined verification status.")
+    if not isinstance(verification.get("method"), str) or not verification["method"].strip():
+        raise ValueError("TKKGData audio release has no verification method.")
     if audio_release.get("schema_version") != 2:
         raise ValueError(
             f"Unsupported TKKGData audio release schema version: "
@@ -76,6 +80,9 @@ def _validate_spotify(audio_release: dict[str, Any]) -> dict[str, Any]:
     album_title = album.get("title")
     if not isinstance(album_title, str) or not album_title.strip():
         raise ValueError("TKKGData Spotify release has no album title.")
+    source_query = album.get("source_query")
+    if not isinstance(source_query, str) or not source_query.strip():
+        raise ValueError("TKKGData Spotify release has no source query provenance.")
 
     raw_tracks = spotify.get("tracks")
     if not isinstance(raw_tracks, list) or not raw_tracks:
@@ -173,6 +180,11 @@ def _validate_youtube_music(audio_release: dict[str, Any]) -> dict[str, Any]:
         seen_ids.add(video_id)
         if not isinstance(title, str) or not title.strip():
             raise ValueError(f"TKKGData YouTube Music track {index} has no title.")
+        artists = track.get("artists")
+        if not isinstance(artists, list) or not all(
+            isinstance(artist, str) for artist in artists
+        ):
+            raise ValueError(f"TKKGData YouTube Music track {index} has invalid artist metadata.")
         normalized.append({
             "track_number": index,
             "video_id": video_id,
