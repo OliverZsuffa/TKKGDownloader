@@ -97,22 +97,22 @@ TKKGData also publishes a known-unavailable registry for episodes 19, 20 and 37.
 
 ## Acceptance criteria
 
-- [ ] The current published TKKGData dataset loads and validates successfully.
-- [ ] Dataset metadata schema `1.0.0` and audio release schema version 2 are validated independently.
-- [ ] Episode 218 produces a YouTube Music plan containing all 35 verified tracks and a Spotisaver plan containing all 25 verified Spotify tracks.
-- [ ] Unequal provider track counts are accepted without cross-provider matching or truncation.
-- [ ] A valid provider remains usable when the other provider's mapping is missing or unverified.
-- [ ] Provider-specific invalid IDs, URLs, counts, duplicate numbers, gaps and ordering errors are rejected.
-- [ ] Episodes 19, 20 and 37 are reported as known unavailable using the published registry information.
-- [ ] Existing YouTube Music downloads still use exact verified individual video URLs.
-- [ ] Existing Spotisaver browser, ZIP, import, manifest, diagnostics and merge safeguards continue to pass their tests.
-- [ ] The hardcoded episode 150 expectation of exactly 40 tracks is replaced with contract-driven validation or a deliberately maintained fixture whose purpose is explicit.
-- [ ] Existing CLI commands, ranges, output handling and overwrite protections remain compatible.
-- [ ] The full automated test suite passes.
+- [x] The current published TKKGData dataset loads and validates successfully.
+- [x] Dataset metadata schema `1.0.0` and audio release schema version 2 are validated independently.
+- [x] Episode 218 produces a YouTube Music plan containing all 35 verified tracks and a Spotisaver plan containing all 25 verified Spotify tracks.
+- [x] Unequal provider track counts are accepted without cross-provider matching or truncation.
+- [x] A valid provider remains usable when the other provider's mapping is missing or unverified.
+- [x] Provider-specific invalid IDs, URLs, counts, duplicate numbers, gaps and ordering errors are rejected.
+- [x] Episodes 19, 20 and 37 are reported as known unavailable using the published registry information.
+- [x] Existing YouTube Music downloads still use exact verified individual video URLs.
+- [x] Existing Spotisaver browser, ZIP, import, manifest, diagnostics and merge safeguards continue to pass their tests.
+- [x] The hardcoded episode 150 expectation of exactly 40 tracks is replaced with contract-driven validation or a deliberately maintained fixture whose purpose is explicit.
+- [x] Existing CLI commands, ranges, output handling and overwrite protections remain compatible.
+- [x] The full automated test suite passes.
 - [ ] At least one real YouTube Music episode download, merge and playback check is completed on Windows.
 - [ ] At least one real Spotisaver episode download, import, merge and playback check is completed on Windows, subject to website availability.
-- [ ] No changes are made to TKKGData or TKKGTracker.
+- [x] No changes are made to TKKGData or TKKGTracker.
 
 ## Open questions
 
-- Confirm the exact published location and shape of the known-unavailable registry when implementing the dataset client. The consumer must follow the TKKGData publication contract rather than infer a path or duplicate the registry.
+None. The registry endpoint and version 1 structure were confirmed against the current TKKGData publication.
