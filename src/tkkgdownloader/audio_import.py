@@ -181,12 +181,24 @@ def _metadata_track_number(value: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _metadata_identity_matches(metadata: dict[str, str | None], number: int, album_title: str | None) -> bool:
-    """Require both a track number and matching album identity for tag fallback."""
+def _metadata_identity_matches(
+    metadata: dict[str, str | None],
+    track: dict[str, Any],
+    album_title: str | None,
+) -> bool:
+    """Require matching album identity and the provider's original disc/track position."""
     tagged_number = _metadata_track_number(metadata.get("track_number"))
+    tagged_disc = _metadata_track_number(metadata.get("disc_number")) or 1
+    expected_number = track.get("source_track_number", track["track_number"])
+    expected_disc = track.get("disc_number", 1)
     tagged_album = _normalize(metadata.get("album") or "")
     expected_album = _normalize(album_title or "")
-    return bool(tagged_number == number and expected_album and tagged_album == expected_album)
+    return bool(
+        tagged_number == expected_number
+        and tagged_disc == expected_disc
+        and expected_album
+        and tagged_album == expected_album
+    )
 
 
 def _track_title_keys(track: dict[str, Any]) -> set[str]:
@@ -259,7 +271,7 @@ def import_audio_files(
                     "metadata_warnings": metadata_warnings,
                 }))
                 continue
-            if _metadata_identity_matches(metadata, number, album_title):
+            if _metadata_identity_matches(metadata, track, album_title):
                 matches.append((source, "verified_album_and_track_metadata", {
                     "evidence": "embedded_album_and_track_number",
                     "matched_title_key": None,
