@@ -252,7 +252,7 @@ class TrackIdentityTests(unittest.TestCase):
             tags.save(tagged)
             archive = make_archive(root, [(tagged.name, tagged.read_bytes())])
             track = {
-                "track_number": 3,
+                "track_number": 1,
                 "source_track_number": 1,
                 "disc_number": 2,
                 "spotify_title": "Unknown title",
