@@ -199,7 +199,8 @@ def _validate_youtube_music(audio_release: dict[str, Any]) -> dict[str, Any]:
             or path_id != browse_id
         ):
             raise ValueError("TKKGData YouTube Music album URL does not match its browse ID.")
-        if album.get("track_count") != len(normalized):
+        album_count = _required_int(album.get("track_count"), "YouTube Music album track_count")
+        if album_count != len(normalized):
             raise ValueError("TKKGData YouTube Music album count does not match its own tracklist.")
         album_title = album.get("title")
         if not isinstance(album_title, str) or not album_title.strip():
@@ -223,7 +224,8 @@ def _validate_youtube_music(audio_release: dict[str, Any]) -> dict[str, Any]:
             or query_id != playlist_id
         ):
             raise ValueError("TKKGData YouTube Music playlist URL does not match its playlist ID.")
-        if playlist.get("track_count") != len(normalized):
+        playlist_count = _required_int(playlist.get("track_count"), "YouTube Music playlist track_count")
+        if playlist_count != len(normalized):
             raise ValueError("TKKGData YouTube Music playlist count does not match its own tracklist.")
 
     verification = audio_release["verification"]["youtube_music"]
