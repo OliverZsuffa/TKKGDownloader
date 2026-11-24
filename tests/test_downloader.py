@@ -7,7 +7,8 @@ from tkkgdownloader.downloader import download_episode, download_episode_spotisa
 from tkkgdownloader.episodes import Episode
 
 
-def audio_release(track_count=2, with_playlist=True):
+def audio_release(track_count=2, with_playlist=True, spotify_track_count=None):
+    spotify_track_count = track_count if spotify_track_count is None else spotify_track_count
     spotify_album_id = "0ZqyFeMXxCyIJvYptGlnn1"
     playlist = None
     if with_playlist:
@@ -15,37 +16,65 @@ def audio_release(track_count=2, with_playlist=True):
         playlist = {
             "playlist_id": playlist_id,
             "url": f"https://music.youtube.com/playlist?list={playlist_id}",
-            "title": "150/Heiße Nächte im Dezember",
+            "title": "YouTube episode playlist",
             "track_count": track_count,
         }
-    tracks = []
-    for number in range(1, track_count + 1):
-        spotify_id = f"{number:022d}"
-        video_id = f"videoid{number:04d}"
-        tracks.append({
+    spotify_tracks = []
+    for number in range(1, spotify_track_count + 1):
+        track_id = f"{number:022d}"
+        spotify_tracks.append({
             "track_number": number,
-            "spotify_title": f"Teil {number:02d}",
-            "spotify_track_id": spotify_id,
-            "spotify_track_url": f"https://open.spotify.com/track/{spotify_id}",
+            "track_id": track_id,
+            "url": f"https://open.spotify.com/track/{track_id}",
+            "title": f"Teil {number:02d}",
+        })
+    youtube_tracks = []
+    for number in range(1, track_count + 1):
+        video_id = f"videoid{number:04d}"
+        youtube_tracks.append({
+            "track_number": number,
             "video_id": video_id,
             "url": f"https://music.youtube.com/watch?v={video_id}",
             "title": f"Teil {number:02d}",
+            "artists": ["TKKG"],
         })
     return {
+        "schema_version": 2,
         "spotify": {
-            "album_id": spotify_album_id,
-            "url": f"https://open.spotify.com/album/{spotify_album_id}",
-            "title": "150/Heiße Nächte im Dezember",
-            "track_count": track_count,
+            "album": {
+                "album_id": spotify_album_id,
+                "url": f"https://open.spotify.com/album/{spotify_album_id}",
+                "title": "Spotify episode album",
+                "track_count": spotify_track_count,
+                "source_query": "reviewed episode album",
+            },
+            "tracks": spotify_tracks,
+            "track_count": spotify_track_count,
         },
         "youtube_music": {
+            "album": {
+                "browse_id": "MPREb_Example",
+                "url": "https://music.youtube.com/browse/MPREb_Example",
+                "title": "YouTube episode album",
+                "track_count": track_count,
+            },
             "playlist": playlist,
-            "tracks": tracks,
+            "tracks": youtube_tracks,
             "track_count": track_count,
         },
-        "verification": {"status": "verified", "matched_track_count": track_count},
+        "verification": {
+            "status": "verified" if spotify_track_count == track_count else "partial",
+            "verified_at": "2026-11-24T12:00:00Z",
+            "method": "independent_provider_tracklist_validation",
+            "spotify": {"status": "verified", "verified_track_count": spotify_track_count},
+            "youtube_music": {
+                "status": "verified",
+                "verified_track_count": track_count,
+                "playlist_status": "verified" if with_playlist else "unavailable",
+                "playlist_error": None,
+            },
+        },
     }
-
 
 class DownloaderSourceTests(unittest.TestCase):
     def _fake_download(self, commands, *, fail_at=None, omit_at=None):
@@ -91,6 +120,20 @@ class DownloaderSourceTests(unittest.TestCase):
             self.assertNotIn("spotdl", command[0].lower())
             self.assertNotIn("https://music.youtube.com/playlist", " ".join(command))
 
+    def test_youtube_download_uses_full_provider_list_when_spotify_is_shorter(self):
+        episode = Episode(
+            218, "Schutzgeld für Dämonen",
+            audio_release(track_count=3, spotify_track_count=2),
+        )
+        commands = []
+        patches = self._patches(commands)
+        with tempfile.TemporaryDirectory() as temp_dir, patches[0], patches[1], patches[2], \
+             patch("tkkgdownloader.downloader.merge_tracks") as merge:
+            download_episode(episode, Path(temp_dir))
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(merge.call_args.args[0]), 3)
+        self.assertIn("https://music.youtube.com/watch?v=videoid0003", commands[2])
+
     def test_download_does_not_depend_on_playlist_metadata(self):
         episode = Episode(150, "Heiße Nächte im Dezember", audio_release(with_playlist=False))
         commands = []
@@ -124,7 +167,7 @@ class DownloaderSourceTests(unittest.TestCase):
 
 
     def test_spotisaver_download_merges_and_finalizes_metadata_automatically(self):
-        episode = Episode(149, "Tims gefährlichster Gegner", audio_release())
+        episode = Episode(149, "Tims gefährlichster Gegner", audio_release(track_count=3, spotify_track_count=2))
         def create_candidate(tracks, output, **kwargs):
             output.write_bytes(b"mock merged audio")
         completed = type("Completed", (), {"returncode": 0, "stdout": "1.0", "stderr": ""})()
@@ -133,7 +176,7 @@ class DownloaderSourceTests(unittest.TestCase):
              patch(
                  "tkkgdownloader.downloader.download_and_import",
                  return_value=[Path("01 - Teil 01.mp3"), Path("02 - Teil 02.mp3")],
-             ), \
+             ) as imported, \
              patch("tkkgdownloader.downloader.merge_tracks", side_effect=create_candidate) as merge, \
              patch("tkkgdownloader.downloader.finalize_metadata", return_value={
                  "verified": True, "artwork_embedded": True,
@@ -143,6 +186,8 @@ class DownloaderSourceTests(unittest.TestCase):
             result = download_episode_spotisaver(episode, Path(temp_dir))
             self.assertTrue(result.is_file())
             self.assertEqual(len(merge.call_args.args[0]), 2)
+            self.assertEqual(imported.call_args.args[0]["track_count"], 2)
+            self.assertEqual(imported.call_args.args[0]["provider"], "spotisaver")
             finalize.assert_called_once()
 
         self.assertTrue(result.name.startswith("TKKG 149"))
@@ -171,6 +216,12 @@ class DownloaderSourceTests(unittest.TestCase):
                     download_episode_spotisaver(episode, output_dir, overwrite=True)
             self.assertEqual(final_path.read_bytes(), b"existing valid output")
             self.assertEqual(list(output_dir.glob("*.partial.mp3")), [])
+
+    def test_known_unavailable_episode_is_reported_without_attempting_download(self):
+        episode = Episode(19, "Episode 19", None, "No official digital rerelease.")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "marked unavailable.*No official digital rerelease"):
+                download_episode(episode, Path(temp_dir))
 
     def test_missing_verified_mapping_fails_clearly(self):
         episode = Episode(150, "Heiße Nächte im Dezember")

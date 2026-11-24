@@ -96,11 +96,11 @@ def _validate_downloaded_files(directory: Path, expected_count: int) -> list[Pat
 
 
 def _download_verified_tracks(yt_dlp: list[str], plan: dict, directory: Path, episode: Episode) -> list[Path]:
-    album_dir = directory / _safe_filename(plan["spotify_album_title"])
+    album_dir = directory / _safe_filename(plan.get("album_title") or f"TKKG {episode.number:03d}")
     album_dir.mkdir(parents=True, exist_ok=True)
     for track in plan["tracks"]:
         number = track["track_number"]
-        title = _safe_filename(track["spotify_title"])
+        title = _safe_filename(track["title"])
         output_template = album_dir / f"{number:02d} - {title}.%(ext)s"
         command = [
             *yt_dlp, "--no-warnings", "--no-playlist", "--extract-audio",
@@ -138,8 +138,13 @@ def download_episode(
     if final_path.exists() and not overwrite:
         print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
         return final_path
+    if episode.audio_unavailable_reason:
+        raise RuntimeError(
+            f"Episode {episode.number} is marked unavailable in TKKGData: "
+            f"{episode.audio_unavailable_reason}"
+        )
     try:
-        plan = validate_audio_release(episode.audio_release)
+        plan = validate_audio_release(episode.audio_release, provider="yt-dlp")
     except ValueError as exc:
         raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
 
@@ -147,8 +152,7 @@ def download_episode(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
-    print(f"Verified release: {plan['spotify_album_title']}", flush=True)
-    print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
+    print(f"YouTube Music release: {plan.get('album_title') or 'verified individual tracks'}", flush=True)
     print(f"Downloading {plan['track_count']} individually verified YouTube Music tracks.", flush=True)
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
@@ -177,8 +181,13 @@ def download_episode_spotisaver(
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
     if diagnostic_dir is not None:
+        if episode.audio_unavailable_reason:
+            raise RuntimeError(
+                f"Episode {episode.number} is marked unavailable in TKKGData: "
+                f"{episode.audio_unavailable_reason}"
+            )
         try:
-            plan = validate_audio_release(episode.audio_release)
+            plan = validate_audio_release(episode.audio_release, provider="spotisaver")
         except ValueError as exc:
             raise RuntimeError(
                 f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}"
@@ -226,8 +235,13 @@ def download_episode_spotisaver(
     if final_path.exists() and not overwrite:
         print(f"SKIP  {final_path.name} already exists. Use --overwrite to replace it.")
         return final_path
+    if episode.audio_unavailable_reason:
+        raise RuntimeError(
+            f"Episode {episode.number} is marked unavailable in TKKGData: "
+            f"{episode.audio_unavailable_reason}"
+        )
     try:
-        plan = validate_audio_release(episode.audio_release)
+        plan = validate_audio_release(episode.audio_release, provider="spotisaver")
     except ValueError as exc:
         raise RuntimeError(f"No usable verified audio source for episode {episode.number} in TKKGData: {exc}") from exc
 

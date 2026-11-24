@@ -116,12 +116,12 @@ def _write_metadata(
     """Write and read back all supported episode, source, and cover metadata."""
     tags = ID3()
     title = f"TKKG {episode.number:03d}: {episode.title}"
-    album = plan.get("spotify_album_title")
+    album = plan.get("album_title") or plan.get("spotify_album_title")
     values: dict[str, Any] = {
         "title": {"value": title, "source": "TKKGData episode number and title"},
     }
     if album:
-        values["album"] = {"value": album, "source": "TKKGData verified Spotify album title"}
+        values["album"] = {"value": album, "source": f"TKKGData verified {plan.get('provider', 'provider')} album title"}
     fields = [
         ("artist", "TPE1", TPE1),
         ("album_artist", "TPE2", TPE2),

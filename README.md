@@ -89,6 +89,10 @@ Settings are resolved in this order: explicit command-line arguments, the config
 
 TKKGDownloader fetches the published TKKGData episode array and dataset metadata. It does not read the TKKGTracker catalogue, scrape sources, search for Spotify albums, discover YouTube matches, or write metadata back to TKKGData.
 
+The published dataset metadata schema and each episode's `audio_release` schema version are validated independently. Audio release version 2 stores Spotify and YouTube Music as separate provider releases with independent ordered tracklists and verification counts. The default yt-dlp provider uses the complete YouTube Music list. Spotisaver uses the complete Spotify list. Their counts and segment boundaries are not expected to match, and a provider can be used when its own verification is complete even if the overall release is marked partial.
+
+The downloader also reads TKKGData's separate `data/audio-unavailable.json` registry. Episodes 19, 20 and 37 are currently recorded as known unavailable and are reported with the published reason. Missing provider data is not automatically classified as global unavailability.
+
 ## Download and output
 
 The default provider invokes yt-dlp once per exact verified YouTube Music track URL, extracts MP3 audio at 192 kbit/s, validates every expected file, then automatically merges the tracks with FFmpeg. The merger probes every source first. It uses stream copy only when codec, sample rate, channel count, and channel layout agree and the completed file passes a full decode and duration check. Otherwise it decodes each track to 24-bit PCM at a common sample rate and channel count, concatenates the PCM segments, and encodes one 320 kbit/s MP3. The final output must decode successfully and remain within a track-count-adjusted duration tolerance of the summed source durations. No merge confirmation is required.

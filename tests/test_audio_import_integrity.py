@@ -6,7 +6,7 @@ from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
-from mutagen.id3 import ID3, TALB, TIT2, TRCK
+from mutagen.id3 import ID3, TALB, TIT2, TPOS, TRCK
 
 from tkkgdownloader.filenames import safe_filename, unique_filename
 
@@ -239,6 +239,33 @@ class TrackIdentityTests(unittest.TestCase):
                                manifest_out=manifest, album_title="Verified Album")
             self.assertEqual(manifest["tracks"][0]["matching_rule"],
                              "verified_album_and_track_metadata")
+
+    def test_album_and_track_metadata_uses_original_spotify_disc_position(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tagged = root / "random-disc-track.mp3"
+            tagged.write_bytes(b"audio")
+            tags = ID3()
+            tags.add(TALB(encoding=3, text="Verified Album"))
+            tags.add(TRCK(encoding=3, text="1/2"))
+            tags.add(TPOS(encoding=3, text="2/2"))
+            tags.save(tagged)
+            archive = make_archive(root, [(tagged.name, tagged.read_bytes())])
+            track = {
+                "track_number": 1,
+                "source_track_number": 1,
+                "disc_number": 2,
+                "spotify_title": "Unknown title",
+            }
+            manifest: dict = {}
+            import_audio_files(
+                [archive], [track], root / "work",
+                manifest_out=manifest, album_title="Verified Album",
+            )
+            self.assertEqual(
+                manifest["tracks"][0]["matching_rule"],
+                "verified_album_and_track_metadata",
+            )
 
     def test_album_and_track_metadata_rejects_wrong_album(self):
         with tempfile.TemporaryDirectory() as temp:

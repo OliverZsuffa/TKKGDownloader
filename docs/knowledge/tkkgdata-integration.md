@@ -1,34 +1,45 @@
 # TKKGData integration
 
-**Status: implemented.**
+**Status: implemented for audio release schema version 2.**
 
 ## Ownership
 
-TKKGData is the canonical source for episode metadata, verified Spotify album metadata, YouTube Music playlist and song URLs, provider track relationships, and verification evidence.
+TKKGData is the canonical source for episode metadata, provider release metadata, ordered Spotify and YouTube Music tracklists, verification evidence, and known-unavailable episode records.
 
-TKKGDownloader is a read-only consumer. It owns CLI parsing, audio download execution, downloaded-file validation, FFmpeg merging, output naming, overwrite protection, and local audio files.
+TKKGDownloader is a read-only consumer. It owns CLI parsing, provider selection, audio download execution, downloaded-file validation, Spotisaver import, FFmpeg merging, output naming, overwrite protection, and local audio files.
 
 ## Published endpoints
 
 - Episode array: https://raw.githubusercontent.com/OliverZsuffa/TKKGData/main/data/episodes.json
 - Dataset metadata: https://raw.githubusercontent.com/OliverZsuffa/TKKGData/main/data/dataset-metadata.json
+- Known unavailable registry: https://raw.githubusercontent.com/OliverZsuffa/TKKGData/main/data/audio-unavailable.json
 
-The current supported schema major version is 1.x. The client validates the metadata episode count, record structure, unique contiguous episode numbering, titles, and required arrays.
+The dataset metadata schema is currently 1.x. The episode-level `audio_release` object has its own `schema_version`, currently version 2. These versions are validated separately.
 
-## Verified audio source selection
+The consumer validates the dataset episode count, record structure, unique contiguous episode numbering, titles, required arrays, and the versioned known-unavailable registry.
 
-A downloadable episode must contain audio_release with verification.status set to verified. The release contains Spotify album metadata, optional YouTube Music playlist metadata, individual YouTube Music song URLs, exact Spotify track pairings, track numbering, and verification evidence.
+## Independent provider release contract
 
-The downloader validates all IDs against their URLs, validates cross-provider counts, and requires a contiguous one-based track sequence.
+An audio release v2 contains independent `spotify` and `youtube_music` objects and provider-specific verification records.
 
-## Download execution
+Each provider owns its own album metadata, ordered tracklist, declared track count, IDs, URLs, and verification count. The consumer validates only the selected provider's complete release. It does not require equal Spotify and YouTube Music counts, matching titles, matching segment boundaries, or one-to-one track correspondence. The overall release can be `partial` while the selected provider is independently `verified`.
 
-The default provider invokes yt-dlp directly for each exact YouTube Music video URL and writes MP3 files to a temporary directory.
+A provider is usable only when its provider-level verification status is `verified`, its verified count equals its own tracklist length, and all provider-specific identifiers, URLs, counts, and ordering are valid.
 
-The optional Spotisaver provider opens the public album page in visible Chromium through Playwright. It verifies the album identity and track titles, uses normal website download controls, imports the resulting ZIP or MP3 files, and requires an exact filename match for every expected track before merging.
+### YouTube Music
 
-The playlist URL remains provenance metadata. Neither provider performs text search or writes corrections back to TKKGData.
+The default `yt-dlp` provider uses every exact verified YouTube Music video URL in the published order. It uses YouTube Music track titles and its own count for filenames, progress, validation, and merging. The optional playlist URL is metadata only and is not used to resolve audio.
+
+### Spotify and Spotisaver
+
+The `spotisaver` provider uses the canonical Spotify album ID as the album identity anchor and validates every imported file against the complete Spotify tracklist. Spotify's original disc and track positions are retained as source metadata. The importer assigns a contiguous one-based canonical sequence for deterministic file naming, manifests, and merging.
+
+The existing Spotisaver browser workflow, queue handling, ZIP transfer, archive safety, deterministic title matching, manifest, checksums, diagnostics, metadata finalization, and merge safeguards remain in place.
+
+## Known unavailable episodes
+
+The consumer loads `data/audio-unavailable.json` separately from the episode array. Its reviewed entries currently identify episodes 19, 20 and 37 as unavailable for official digital rerelease. These are reported with their published reason. A missing or unverified provider mapping is not automatically treated as global unavailability, and the downloader never silently switches providers.
 
 ## Compatibility boundary
 
-The CLI, episode range processing, output naming, automatic FFmpeg merge, overwrite protection, and local files remain TKKGDownloader responsibilities. No independent catalogue or source discovery belongs in this repository.
+The CLI, episode range processing, output naming, automatic FFmpeg merge, overwrite protection, and local files remain TKKGDownloader responsibilities. No independent catalogue, source discovery, scraping, Spotify resolution, YouTube matching, or write-back belongs in this repository.

@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from tkkgdownloader.cli import parse_episode_spec
 from tkkgdownloader.episodes import (
+    AUDIO_UNAVAILABLE_URL,
     DATASET_METADATA_URL,
     EPISODES_URL,
     Episode,
@@ -94,13 +95,14 @@ class CatalogTests(unittest.TestCase):
 
         with patch(
             "tkkgdownloader.episodes.urllib.request.urlopen",
-            side_effect=[FakeResponse(metadata), FakeResponse(payload)],
+            side_effect=[FakeResponse(metadata), FakeResponse(payload), FakeResponse({"version": 1, "episodes": {}})],
         ) as urlopen:
             catalog = fetch_catalog()
         self.assertEqual(catalog[1].title, "One")
-        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(urlopen.call_count, 3)
         self.assertIn("TKKGData/main", DATASET_METADATA_URL)
         self.assertIn("TKKGData/main", EPISODES_URL)
+        self.assertIn("audio-unavailable.json", AUDIO_UNAVAILABLE_URL)
 
     def test_fetch_catalog_rejects_unsupported_schema(self):
         metadata = {"schema_version": "2.0.0", "episode_count": 1}
@@ -118,6 +120,38 @@ class CatalogTests(unittest.TestCase):
         with patch("tkkgdownloader.episodes.urllib.request.urlopen", return_value=FakeResponse()):
             with self.assertRaisesRegex(ValueError, "Unsupported TKKGData schema"):
                 fetch_catalog()
+
+    def test_audio_unavailable_registry_is_attached_to_episode(self):
+        registry = {
+            "version": 1,
+            "episodes": {
+                "19": {"status": "unavailable", "reason": "Reviewed reason", "basis": "Review"},
+            },
+        }
+        catalog = parse_catalog([episode_record(n, f"Episode {n}") for n in range(1, 20)], registry)
+        self.assertEqual(catalog[19].audio_unavailable_reason, "Reviewed reason")
+        self.assertEqual(catalog[19].audio_unavailable_basis, "Review")
+        self.assertIsNone(catalog[1].audio_unavailable_reason)
+
+    def test_audio_unavailable_registry_rejects_unknown_episode(self):
+        registry = {
+            "version": 1,
+            "episodes": {
+                "2": {"status": "unavailable", "reason": "Reason"},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "unknown episodes"):
+            parse_catalog([episode_record(1, "One")], registry)
+
+    def test_audio_unavailable_registry_requires_a_reason(self):
+        registry = {
+            "version": 1,
+            "episodes": {
+                "1": {"status": "unavailable", "reason": ""},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            parse_catalog([episode_record(1, "One")], registry)
 
     def test_fetch_catalog_rejects_metadata_count_mismatch(self):
         metadata = {"schema_version": "1.0.0", "episode_count": 2}
@@ -138,7 +172,7 @@ class CatalogTests(unittest.TestCase):
 
         with patch(
             "tkkgdownloader.episodes.urllib.request.urlopen",
-            side_effect=[FakeResponse(metadata), FakeResponse(payload)],
+            side_effect=[FakeResponse(metadata), FakeResponse(payload), FakeResponse({"version": 1, "episodes": {}})],
         ):
             with self.assertRaisesRegex(ValueError, "reports 2"):
                 fetch_catalog()

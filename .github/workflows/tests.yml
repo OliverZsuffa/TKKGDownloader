@@ -25,31 +25,37 @@ jobs:
         run: python -m pip install -e .
       - name: Compile Python modules
         run: python -m compileall -q src tests
-      - name: Smoke test published TKKGData contract
+      - name: Smoke test published TKKGData provider contracts
         run: |
           python - <<'PY'
           from tkkgdownloader.episodes import fetch_catalog
           from tkkgdownloader.audio_sources import validate_audio_release
 
           catalog = fetch_catalog()
-          assert 150 in catalog, "Episode 150 is missing from TKKGData"
-          episode = catalog[150]
-          plan = validate_audio_release(episode.audio_release)
-          assert plan["track_count"] == 40, "Episode 150 must expose all 40 verified tracks"
-          assert plan["youtube_music_playlist_url"] == (
-              "https://music.youtube.com/playlist?list="
-              "OLAK5uy_mQRbJNANh1H4CKbmM5ez5LSW1HJFvE3QI"
-          ), "Episode 150's verified YouTube Music playlist changed"
-          assert len(plan["tracks"]) == 40
-          assert plan["tracks"][0]["youtube_music_url"].startswith(
-              "https://music.youtube.com/watch?v="
+          assert 218 in catalog, "Episode 218 is missing from TKKGData"
+          episode = catalog[218]
+          spotify = validate_audio_release(episode.audio_release, provider="spotisaver")
+          youtube = validate_audio_release(episode.audio_release, provider="yt-dlp")
+          assert spotify["track_count"] == 25, (
+              f"Episode 218 Spotify list changed: {spotify['track_count']} tracks"
           )
-          assert plan["tracks"][0]["spotify_track_url"].startswith(
+          assert youtube["track_count"] == 35, (
+              f"Episode 218 YouTube Music list changed: {youtube['track_count']} tracks"
+          )
+          assert spotify["tracks"][0]["spotify_track_url"].startswith(
               "https://open.spotify.com/track/"
           )
+          assert youtube["tracks"][0]["youtube_music_url"].startswith(
+              "https://music.youtube.com/watch?v="
+          )
+          assert 19 in catalog and catalog[19].audio_unavailable_reason
+          assert 20 in catalog and catalog[20].audio_unavailable_reason
+          assert 37 in catalog and catalog[37].audio_unavailable_reason
           print(
-              f"Fetched {len(catalog)} TKKGData episodes. "
-              f"Episode 150 has {plan['track_count']} verified Spotify and YouTube Music pairs."
+              f"Fetched {len(catalog)} episodes. Episode 218 has "
+              f"{spotify['track_count']} Spotify tracks and "
+              f"{youtube['track_count']} YouTube Music tracks. "
+              "Known unavailable registry loaded."
           )
           PY
       - name: Run unit tests
