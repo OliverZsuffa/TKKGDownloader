@@ -152,8 +152,7 @@ def download_episode(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("Could not find 'ffmpeg'. Install FFmpeg and make sure it is available on PATH.")
-    print(f"Verified release: {plan['spotify_album_title']}", flush=True)
-    print(f"Spotify album: {plan['spotify_album_url']}", flush=True)
+    print(f"YouTube Music release: {plan.get('album_title') or 'verified individual tracks'}", flush=True)
     print(f"Downloading {plan['track_count']} individually verified YouTube Music tracks.", flush=True)
 
     with tempfile.TemporaryDirectory(prefix=f"tkkg_{episode.number:03d}_") as temp:
@@ -181,6 +180,11 @@ def download_episode_spotisaver(
     """Download one episode through Spotisaver, optionally retaining a full diagnostic workspace."""
     output_dir.mkdir(parents=True, exist_ok=True)
     final_path = output_dir / f"TKKG {episode.number:03d} - {_safe_filename(episode.title)}.mp3"
+    if episode.audio_unavailable_reason:
+        raise RuntimeError(
+            f"Episode {episode.number} is marked unavailable in TKKGData: "
+            f"{episode.audio_unavailable_reason}"
+        )
     if diagnostic_dir is not None:
         try:
             plan = validate_audio_release(episode.audio_release, provider="spotisaver")
