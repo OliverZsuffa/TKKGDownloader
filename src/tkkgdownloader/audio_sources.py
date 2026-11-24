@@ -77,7 +77,23 @@ def _validate_spotify(audio_release: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(album_title, str) or not album_title.strip():
         raise ValueError("TKKGData Spotify release has no album title.")
 
-    tracks = _validate_track_order(spotify.get("tracks"), "Spotify")
+    raw_tracks = spotify.get("tracks")
+    if not isinstance(raw_tracks, list) or not raw_tracks:
+        raise ValueError("TKKGData has no Spotify individual tracklist.")
+    tracks = []
+    previous_position: tuple[int, int] | None = None
+    for index, track in enumerate(raw_tracks, start=1):
+        if not isinstance(track, dict):
+            raise ValueError(f"TKKGData Spotify track {index} is malformed.")
+        source_number = _required_int(track.get("track_number"), f"Spotify track {index} number")
+        disc_number = track.get("disc_number", 1)
+        if isinstance(disc_number, bool) or not isinstance(disc_number, int) or disc_number < 1:
+            raise ValueError(f"TKKGData Spotify track {index} has an invalid disc number.")
+        position = (disc_number, source_number)
+        if previous_position is not None and position <= previous_position:
+            raise ValueError("TKKGData Spotify album positions contain duplicates or are out of order.")
+        previous_position = position
+        tracks.append(track)
     count = _required_int(spotify.get("track_count"), "Spotify track_count")
     album_count = _required_int(album.get("track_count"), "Spotify album track_count")
     if count != len(tracks) or album_count != len(tracks):
@@ -87,7 +103,6 @@ def _validate_spotify(audio_release: dict[str, Any]) -> dict[str, Any]:
 
     normalized: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    previous_position: tuple[int, int] | None = None
     for index, track in enumerate(tracks, start=1):
         track_id = track.get("track_id")
         track_url = track.get("url")
@@ -103,13 +118,7 @@ def _validate_spotify(audio_release: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"TKKGData Spotify track {index} has no title.")
 
         disc_number = track.get("disc_number", 1)
-        if isinstance(disc_number, bool) or not isinstance(disc_number, int) or disc_number < 1:
-            raise ValueError(f"TKKGData Spotify track {index} has an invalid disc number.")
         source_number = track["track_number"]
-        position = (disc_number, source_number)
-        if previous_position is not None and position <= previous_position:
-            raise ValueError("TKKGData Spotify album positions contain duplicates or are out of order.")
-        previous_position = position
         normalized.append({
             "track_number": index,
             "source_track_number": source_number,
