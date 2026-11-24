@@ -32,4 +32,14 @@ The combined audio release status can be `partial` while an individual provider 
 
 ## Verification
 
-Automated and CI verification is pending. Real Windows downloads, Spotisaver import, FFmpeg merge and playback remain to be completed locally and must not be inferred from unit test results.
+GitHub Actions run [45413572404](https://github.com/OliverZsuffa/TKKGDownloader/actions/runs/45413572404) completed successfully on the Request 024 pull request.
+
+Passed steps:
+- Project dependency installation.
+- Python compilation for source and test modules.
+- Live TKKGData provider contract smoke test.
+- Episode 218 check: 25 Spotify tracks and 35 YouTube Music tracks.
+- Known-unavailable registry checks for episodes 19, 20 and 37.
+- Full unit test suite, including synthetic FFmpeg integration tests.
+
+Real Windows downloads, Spotisaver browser import, final MP3 playback, and end-to-end verification on the user's Windows environment have not been performed in this environment. They remain required before declaring the full operational acceptance criteria complete.
